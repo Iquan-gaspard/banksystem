@@ -1,11 +1,13 @@
 # 金融商品喜好紀錄系統（banksystem）
 
-使用者可以新增、查詢、修改、刪除自己喜好的金融商品，系統自動計算總手續費與預計扣款總金額。
+[![CI](https://github.com/Iquan-gaspard/banksystem/actions/workflows/ci.yml/badge.svg)](https://github.com/Iquan-gaspard/banksystem/actions/workflows/ci.yml)
+
+使用者登入後，可以新增、查詢、修改、刪除自己喜好的金融商品，系統自動計算總手續費與預計扣款總金額，並記錄每一次異動。
 
 - 前端：Vue 3 + Vite
-- 後端：Java 17、Spring Boot 3.5、Maven Wrapper
+- 後端：Java 17、Spring Boot 3.5、Spring Security、Maven Wrapper
 - 資料庫：MySQL 8.4（所有存取皆透過 Stored Procedure）
-- Web Server：Nginx；部署：Docker Compose
+- Web Server：Nginx；部署：Docker Compose；CI：GitHub Actions
 
 > 本專案開發過程使用 AI 工具輔助，包含規格整理、程式撰寫與測試；所有設計決策與驗證結果皆經本人確認。
 
@@ -16,15 +18,16 @@
 1. [系統架構](#1-系統架構)
 2. [快速啟動（Docker）](#2-快速啟動docker)
 3. [非 Docker 啟動方式](#3-非-docker-啟動方式)
-4. [測試](#4-測試)
-5. [RESTful API](#5-restful-api)
-6. [資料庫設計](#6-資料庫設計)
-7. [計算規則](#7-計算規則)
-8. [Transaction 設計](#8-transaction-設計)
-9. [安全性：SQL Injection 與 XSS](#9-安全性sql-injection-與-xss)
-10. [專案結構與後端分層](#10-專案結構與後端分層)
-11. [設計決策](#11-設計決策)
-12. [需求對照表](#12-需求對照表)
+4. [啟用 HTTPS（選用）](#4-啟用-https選用)
+5. [測試與 CI](#5-測試與-ci)
+6. [RESTful API](#6-restful-api)
+7. [資料庫設計](#7-資料庫設計)
+8. [計算規則](#8-計算規則)
+9. [Transaction 設計](#9-transaction-設計)
+10. [安全性](#10-安全性)
+11. [專案結構與後端分層](#11-專案結構與後端分層)
+12. [設計決策](#12-設計決策)
+13. [需求對照表](#13-需求對照表)
 
 ---
 
@@ -33,14 +36,16 @@
 三層式架構：
 
 ```
-Browser ──HTTP──▶ Nginx（Web Server，:8088）
-                    ├─ /       → Vue 靜態檔
-                    └─ /api/*  → Spring Boot（Application Server，:8080，僅內部網路）
-                                    └─ JDBC CALL sp_xxx(?) → MySQL（RDBMS，:3306，僅內部網路）
+Browser ──HTTP(S)──▶ Nginx（Web Server，:8088）
+                       ├─ 流量限制（登入 5 次/分、API 20 次/秒）
+                       ├─ /       → Vue 靜態檔
+                       └─ /api/*  → Spring Boot（Application Server，:8080，僅內部網路）
+                                      ├─ Spring Security：Session 登入、授權、CSRF
+                                      └─ JDBC CALL sp_xxx(?) → MySQL（RDBMS，:3306，僅內部網路）
 ```
 
 - 對外只開放 Nginx；後端與資料庫只在 Docker 內部網路（資料庫另綁 `127.0.0.1:13306` 供本機除錯）。
-- 前後端同源（都經 Nginx），不需要 CORS。
+- 啟動順序由健康檢查控制：MySQL healthy → Spring Boot healthy（`/actuator/health`，含 DB 檢查）→ Nginx。
 
 ## 2. 快速啟動（Docker）
 
@@ -50,12 +55,21 @@ Browser ──HTTP──▶ Nginx（Web Server，:8088）
 # 1. 建立環境變數檔（可修改密碼與 port）
 cp .env.example .env          # Windows PowerShell：Copy-Item .env.example .env
 
-# 2. 建置並啟動 db / backend / web 三個服務
-docker compose up -d --build
+# 2. 建置並啟動 db / backend / web（--wait 會等到全部 healthy）
+docker compose up -d --build --wait
 
-# 3. 開啟瀏覽器
-#    http://localhost:8088
+# 3. 開啟瀏覽器 http://localhost:8088
 ```
+
+**示範帳號**（密碼皆為 `Demo@1234`，資料庫中以 BCrypt 雜湊儲存）：
+
+| 使用者 ID | 名稱 | 說明 |
+|---|---|---|
+| `A1236456789` | 王o明 | 有 2 筆示範資料 |
+| `B2345678901` | 李o華 | 有 1 筆示範資料 |
+| `C3456789012` | 陳o美 | 無資料 |
+
+API 文件（Swagger UI）：http://localhost:8088/api/swagger-ui.html（先在網站登入，同一瀏覽器即可試用 API）。
 
 第一次啟動時，MySQL 會依序自動執行 `DB/` 內的腳本（建表 → Stored Procedure → 示範資料 → 應用程式帳號）。
 
@@ -76,6 +90,9 @@ docker compose up -d --build
 | `APP_DB_USER` / `APP_DB_PASSWORD` | `banksystem_app` / `change_me_app` | 應用程式帳號（只有 EXECUTE 權限） |
 | `WEB_PORT` | `8088` | 網站對外 port（避開常被佔用的 80） |
 | `DB_HOST_PORT` | `13306` | 本機連 MySQL 的 port（避開 3306） |
+| `SWAGGER_ENABLED` | `true` | 是否開放 API 文件；正式環境請設為 `false` |
+
+> `.env.example` 的密碼僅供本機示範，部署前必須更換；真正的 `.env` 不進版控。
 
 ## 3. 非 Docker 啟動方式
 
@@ -106,7 +123,7 @@ DB_PASSWORD='<你的密碼>' ./mvnw spring-boot:run
 $env:DB_PASSWORD='<你的密碼>'; .\mvnw.cmd spring-boot:run
 ```
 
-可用環境變數：`DB_HOST`、`DB_PORT`、`DB_USERNAME`、`DB_PASSWORD`。
+可用環境變數：`DB_HOST`、`DB_PORT`、`DB_USERNAME`、`DB_PASSWORD`、`COOKIE_SECURE`、`SWAGGER_ENABLED`。
 
 **(3) 啟動前端**
 
@@ -117,35 +134,75 @@ npm run dev
 # 開啟 http://localhost:5173（Vite 會把 /api 轉發到 localhost:8080）
 ```
 
-## 4. 測試
+非 Docker 模式沒有 Nginx，因此不含流量限制；正式部署請使用 Nginx（`frontend/nginx.conf`）。
+
+## 4. 啟用 HTTPS（選用）
+
+預設為 HTTP（本機示範用自簽憑證會讓瀏覽器顯示警告）。專案提供已驗證過的設定範本：
+
+| 檔案 | 內容 |
+|---|---|
+| `frontend/nginx.https.conf.example` | HTTP 轉址 HTTPS、TLS 1.2 / 1.3、HSTS，其餘（流量限制、安全 header）同 `nginx.conf` |
+| `docker-compose.https.example.yml` | 掛載憑證、開放 443、後端 `COOKIE_SECURE=true`（Session cookie 只在 HTTPS 傳送） |
+
+```bash
+# 1. 放置憑證（certs/ 已列入 .gitignore，私鑰不可提交）
+#    certs/fullchain.pem、certs/privkey.pem
+# 2. 以覆寫檔啟動
+docker compose -f docker-compose.yml -f docker-compose.https.example.yml up -d --build --wait
+```
+
+正式環境常見做法是由負載平衡器或 API Gateway 終結 TLS，此時保留 `X-Forwarded-Proto` 轉送即可（後端已設定 `forward-headers-strategy: native`）。
+
+## 5. 測試與 CI
 
 ```bash
 cd backend
 ./mvnw clean verify        # Windows：.\mvnw.cmd clean verify
 ```
 
+共 47 個測試：
+
 | 測試 | 類型 | 內容 |
 |---|---|---|
 | `FeeCalculatorTest` | 單元 | 手續費 / 總金額計算、四捨五入邊界、上限檢查 |
 | `LikeServiceTest` | 單元（Mockito） | 業務流程：使用者不存在、資料不存在或不屬於該使用者 |
-| `LikeControllerTest` | 展示層（`@WebMvcTest`） | 201 / 204 / 400 / 404、各欄位邊界值（剛好合法 / 超出一格）、數量為小數、XSS 輸入、竄改金額欄位、惡意 userId、錯誤訊息不回傳使用者輸入 |
-| `LikeTransactionIntegrationTest` | 整合（Testcontainers + 真實 MySQL） | 經 SP 的 CRUD、**多表交易 rollback**、應用程式帳號無法直接存取資料表 |
+| `LikeControllerTest` | 展示層（`@WebMvcTest` + Spring Security） | 201 / 204 / 400 / 404；未登入 401、存取他人資料 403、缺少 CSRF 403；各欄位邊界值；XSS 輸入；竄改金額欄位；錯誤訊息不回傳使用者輸入 |
+| `LikeTransactionIntegrationTest` | 整合（Testcontainers + 真實 MySQL） | 以示範帳號實際登入；經 SP 的 CRUD；**多表交易 rollback**（含操作紀錄）；操作紀錄內容；應用程式帳號無法直接存取資料表 |
 
 整合測試會啟動 MySQL 容器並執行 `DB/` 內的腳本；**沒有 Docker 的環境會自動略過**（`@Testcontainers(disabledWithoutDocker = true)`），`./mvnw clean verify` 仍可通過。
 
-## 5. RESTful API
+**GitHub Actions**（`.github/workflows/ci.yml`）每次推送自動執行：
 
-Base path：`/api`，回應格式 JSON；錯誤統一為 RFC 7807 `application/problem+json`。
+1. 後端 `./mvnw verify`（含 Testcontainers 整合測試）
+2. 前端 `npm ci && npm run build`
+3. `docker compose up --wait` 啟動整套系統，以 curl 實際登入並驗證授權（冒煙測試）
+
+## 6. RESTful API
+
+Base path：`/api`，回應格式 JSON；錯誤統一為 RFC 7807 `application/problem+json`。完整文件見 Swagger UI（`/api/swagger-ui.html`）。
+
+**登入 / 登出**
 
 | Method | Path | 說明 | 成功 | 失敗 |
 |---|---|---|---|---|
-| GET | `/api/users` | 使用者清單 | 200 | — |
-| GET | `/api/users/{userId}` | 單一使用者 | 200 | 400、404 |
-| GET | `/api/users/{userId}/likes` | 喜好清單 | 200 | 400、404 |
-| GET | `/api/users/{userId}/likes/{sn}` | 單筆喜好 | 200 | 400、404 |
-| POST | `/api/users/{userId}/likes` | 新增喜好 | 201 + `Location` | 400、404 |
-| PUT | `/api/users/{userId}/likes/{sn}` | 修改喜好 | 200 | 400、404 |
-| DELETE | `/api/users/{userId}/likes/{sn}` | 刪除喜好 | 204 | 400、404 |
+| POST | `/api/auth/login` | 登入（表單欄位 `userId`、`password`），建立 Session | 200 + 使用者資料 | 401、403（缺 CSRF）、429（過於頻繁） |
+| POST | `/api/auth/logout` | 登出 | 204 | — |
+| GET | `/api/auth/me` | 目前登入的使用者 | 200 | 401 |
+
+**業務 API**（`{userId}` 必須是登入者本人，否則 403；未登入 401）
+
+| Method | Path | 說明 | 成功 | 失敗 |
+|---|---|---|---|---|
+| GET | `/api/users/{userId}` | 使用者資料 | 200 | 401、403 |
+| GET | `/api/users/{userId}/likes` | 喜好清單 | 200 | 401、403 |
+| GET | `/api/users/{userId}/likes/{sn}` | 單筆喜好 | 200 | 400、401、403、404 |
+| POST | `/api/users/{userId}/likes` | 新增喜好 | 201 + `Location` | 400、401、403 |
+| PUT | `/api/users/{userId}/likes/{sn}` | 修改喜好 | 200 | 400、401、403、404 |
+| DELETE | `/api/users/{userId}/likes/{sn}` | 刪除喜好 | 204 | 401、403、404 |
+| GET | `/api/users/{userId}/audit-logs` | 操作紀錄（最新 50 筆） | 200 | 401、403 |
+
+**CSRF**：非 GET 請求須帶 `X-XSRF-TOKEN` header，值取自後端寫入的 `XSRF-TOKEN` cookie（前端已自動處理）。
 
 新增 / 修改的 request body（總手續費、總金額由後端計算，**傳入會被拒絕**）：
 
@@ -180,21 +237,21 @@ Base path：`/api`，回應格式 JSON；錯誤統一為 RFC 7807 `application/p
 }
 ```
 
-輸入規則：產品名稱 1–100 字且不可含 `<` `>`；價格 > 0（最多 2 位小數）；手續費率 0–1（最多 4 位小數，0.01 = 1%）；購買數量 1–1,000,000 的整數；扣款帳號 10–16 碼數字；userId 1–20 碼英數字。
+輸入規則：產品名稱 1–100 字且不可含 `<` `>`；價格 > 0（最多 2 位小數）；手續費率 0–1（最多 4 位小數，0.01 = 1%）；購買數量 1–1,000,000 的整數（小數直接拒絕）；扣款帳號 10–16 碼數字。
 
-## 6. 資料庫設計
+## 7. 資料庫設計
 
 DDL / DML 位於 [`DB/`](DB/)：
 
 | 檔案 | 內容 |
 |---|---|
 | `01_schema.sql` | 建立資料庫與資料表（PK、FK、CHECK、索引） |
-| `02_procedures.sql` | 7 個 Stored Procedure |
+| `02_procedures.sql` | Stored Procedure 與快照函式 |
 | `03_seed.sql` | 示範資料（3 位使用者、3 筆喜好） |
 | `04_app_user.sh` | 建立應用程式帳號，只授予 EXECUTE 權限 |
 
 ```
-users (user_id PK, user_name, email, account)
+users (user_id PK, user_name, email, account, password_hash)
    1
    │
    N
@@ -204,25 +261,32 @@ like_list (sn PK, user_id FK, product_no FK UNIQUE, purchase_quantity,
    │
    1
 product (no PK, product_name, price DECIMAL(15,2), fee_rate DECIMAL(5,4))
+
+audit_log (id PK, actor_user_id FK, owner_user_id FK, action, like_sn,
+           before_data JSON, after_data JSON, client_ip, created_at)
 ```
 
 - 金額一律使用 `DECIMAL`（Java 端 `BigDecimal`），不用浮點數。
 - 每筆喜好對應一筆自己的產品資料（1:1），修改 / 刪除不會影響其他人。
-- CHECK：價格 > 0、費率 0–1、數量 > 0、金額 ≥ 0。
+- 密碼只存 BCrypt 雜湊，不存明文。
+- `audit_log.like_sn` 刻意不設 FK：資料刪除後紀錄仍需保留。
+- CHECK：價格 > 0、費率 0–1、數量 > 0、金額 ≥ 0、動作只能是 CREATE / UPDATE / DELETE。
 
 Stored Procedure：
 
 | SP | 動到的表 | 說明 |
 |---|---|---|
-| `sp_user_list` | users | 使用者清單 |
-| `sp_user_get` | users | 單一使用者 |
+| `sp_user_get` | users | 使用者資料 |
+| `sp_user_get_credentials` | users | 登入驗證用（帳號與密碼雜湊，不經 API 回傳） |
 | `sp_like_list_by_user` | like_list ⋈ product ⋈ users | 喜好清單（含 Email） |
 | `sp_like_get` | like_list ⋈ product ⋈ users | 單筆喜好 |
-| `sp_like_create` | **product → like_list** | 新增，回傳新 sn |
-| `sp_like_update` | **product + like_list** | 修改，以 user_id + sn 定位 |
-| `sp_like_delete` | **like_list → product** | 刪除，以 user_id + sn 定位 |
+| `sp_like_create` | **product → like_list → audit_log** | 新增，回傳新 sn |
+| `sp_like_update` | **product + like_list + audit_log** | 修改，以 user_id + sn 定位 |
+| `sp_like_delete` | **like_list → product + audit_log** | 刪除，以 user_id + sn 定位 |
+| `sp_audit_list_by_user` | audit_log | 操作紀錄 |
+| `fn_like_snapshot`（函式） | like_list ⋈ product | 產生異動前 / 後的 JSON 快照 |
 
-## 7. 計算規則
+## 8. 計算規則
 
 新台幣，四捨五入（HALF_UP）至整數元：
 
@@ -240,95 +304,125 @@ Stored Procedure：
 
 計算位於業務層 [`FeeCalculator`](backend/src/main/java/com/banksystem/service/FeeCalculator.java)，前端傳入的金額一律不採用。
 
-## 8. Transaction 設計
+## 9. Transaction 設計
 
-新增、修改、刪除都會**同時異動 `product` 與 `like_list` 兩張表**，由業務層 `@Transactional` 包成一個交易：任何一步失敗（例如違反 CHECK / FK）就整筆 rollback。
+新增、修改、刪除都會**同時異動 `product`、`like_list`、`audit_log` 三張表**，由業務層 `@Transactional` 包成一個交易：任何一步失敗（例如違反 CHECK / FK）就整筆 rollback，**操作紀錄也一併還原**，不會留下「資料沒改成功、卻有紀錄」的情況。
 
 - SP 內刻意**不寫** `START TRANSACTION / COMMIT`：MySQL 在已開啟的交易中執行 `START TRANSACTION` 會隱含 commit 外層交易，造成無法整筆 rollback。因此交易邊界統一由 Spring 管理。
 - 取捨：若繞過後端直接在 MySQL client 以 autocommit 呼叫 SP，失敗時不會自動 rollback；應用程式的所有呼叫皆在交易內。
-- 整合測試 `LikeTransactionIntegrationTest` 以真實 MySQL 驗證：故意讓第二張表寫入失敗，確認第一張表的異動一併 rollback。
+- 整合測試 `LikeTransactionIntegrationTest` 以真實 MySQL 驗證：故意讓第二張表寫入失敗，確認其他表的異動與操作紀錄一併 rollback。
 
-## 9. 安全性：SQL Injection 與 XSS
+## 10. 安全性
+
+**登入與授權**
+
+1. Spring Security Session 登入；密碼以 BCrypt 比對；帳號查詢同樣透過 Stored Procedure。
+2. 登入失敗一律回「帳號或密碼錯誤」，不透露是帳號不存在還是密碼錯誤。
+3. Session cookie：`HttpOnly`（JavaScript 讀不到）、`SameSite=Lax`、15 分鐘逾時；啟用 HTTPS 時加上 `Secure`。
+4. 授權：`/api/users/{userId}/**` 只允許登入者本人（他人 403、未登入 401），不信任網址參數。
+5. 不提供「列出所有使用者」的 API，避免洩漏他人 Email 與帳號。
+6. 選擇 Session 而非 JWT：token 不需存放在 JavaScript 可讀的位置，可降低 XSS 竊取風險；登出即可讓 Session 失效。
+
+**CSRF**
+
+- Cookie-to-header：後端寫入 `XSRF-TOKEN` cookie，前端在非 GET 請求帶 `X-XSRF-TOKEN` header；其他網站讀不到本站 cookie，因此偽造請求會被拒絕（403）。登入請求同樣受保護。
+- 搭配 `SameSite=Lax` 作為第二層防護。
 
 **SQL Injection**
 
 1. 所有資料庫存取都透過 Stored Procedure，Java 端以 `SimpleJdbcCall`（CallableStatement）具名綁定參數，**程式中沒有任何字串拼接的 SQL**。
 2. SP 內不使用動態 SQL（`PREPARE` / `CONCAT`）。
 3. 最小權限：應用程式帳號只有 `EXECUTE` 權限，無法直接 `SELECT / INSERT / UPDATE / DELETE` 資料表（整合測試驗證）。
-4. 輸入白名單驗證（userId 英數字、帳號純數字、數值範圍），不合法直接 400。
+4. 輸入白名單驗證（帳號純數字、數值範圍），不合法直接 400；惡意 userId 在授權層即被擋下（403）。
 
 **XSS**
 
 1. 前端一律用 Vue `{{ }}` 輸出（自動 HTML 跳脫），**全專案不使用 `v-html`**。
 2. 後端 `@NoHtml` 驗證拒絕含 `<`、`>` 的文字輸入。
-3. Nginx 回應 `Content-Security-Policy`（`script-src 'self'`，禁止 inline script）、`X-Frame-Options: DENY`、`X-Content-Type-Options: nosniff`、`Referrer-Policy`。
-4. API 回應加 `nosniff`、`Cache-Control: no-store`；錯誤訊息不帶 stack trace、SQL 或使用者原始輸入。
+3. 靜態頁（Nginx）：`Content-Security-Policy`（`script-src 'self'`，禁止 inline script）、`X-Frame-Options: DENY`、`X-Content-Type-Options: nosniff`、`Referrer-Policy`。
+4. API（Spring Security）：`Content-Security-Policy: default-src 'none'`、`nosniff`、`X-Frame-Options: DENY`、`Cache-Control: no-store`。Swagger UI 頁面使用獨立、較寬鬆的 CSP。
+5. 錯誤回應的 `detail` 一律為固定文字，不帶 stack trace、SQL 或使用者輸入。
+
+**流量限制（Nginx）**
+
+- 登入：每個 IP 每分鐘 5 次（可額外排隊 5 次），緩解暴力破解密碼。
+- 一般 API：每個 IP 每秒 20 次（可額外排隊 40 次）。
+- 超過回 `429` 與 JSON 錯誤訊息。
+
+**操作紀錄**
+
+- 記錄誰（登入者）、何時、對哪筆資料、做了什麼（新增 / 修改 / 刪除）、異動前後內容、來源 IP（經 Nginx 由 `X-Forwarded-For` 取得）。
+- 與資料異動在同一交易中寫入；應用程式帳號沒有任何能刪改紀錄的 SP，**無法竄改紀錄**。
 
 **其他**
 
-- 每筆資料都以 `user_id + sn` 定位，無法修改 / 刪除其他使用者的資料（回 404）。
-- 不接受未定義的 JSON 欄位（防止竄改金額）；整數欄位收到小數直接拒絕，不默默截斷。
-- 錯誤回應的 `detail` 一律為固定文字，不回傳使用者輸入。
-- 密碼由 `.env` 提供，不寫在程式碼；`.env` 不進版控。
-- 後端容器以非 root 使用者執行；Nginx 不顯示版本號。
+- 每筆資料都以 `user_id + sn` 定位；不接受未定義的 JSON 欄位（防止竄改金額）；整數欄位收到小數直接拒絕。
+- 密碼由 `.env` 提供，不寫在程式碼；`.env`、憑證、私鑰不進版控。
+- 後端容器以非 root 使用者執行；Nginx 不顯示版本號；`/actuator` 只開放 `health` 且不經 Nginx 對外。
 
 **已知限制與正式上線前需補強**
 
-本作業範圍內未實作、正式環境必須補上的項目：
-
 | 項目 | 現況 | 正式環境做法 |
 |---|---|---|
-| 身分驗證 / 授權 | 無登入，userId 由網址指定，任何人可操作任一使用者的資料 | 導入登入機制（如 OAuth2 / JWT），userId 改由登入身分取得，不再信任網址參數 |
-| CSRF | 目前無 cookie / session，不適用 | 若改用 cookie 驗證，需加 CSRF token 或 `SameSite` cookie |
-| 傳輸加密 | HTTP | Nginx 設定 HTTPS（TLS）與 HSTS |
-| 流量限制 | 無 | Nginx `limit_req` 或 API Gateway 限制請求頻率 |
-| 稽核紀錄 | 無 | 記錄誰在何時新增 / 修改 / 刪除了哪筆資料 |
+| 身分來源 | 示範帳號寫在 seed 資料，無註冊、改密碼、忘記密碼功能 | 串接企業 SSO / 身分提供者（OIDC），並加上多因素驗證（MFA） |
+| 帳號鎖定 | 以 Nginx 流量限制緩解暴力破解 | 連續失敗 N 次鎖定帳號並通知使用者 |
+| HTTPS | 提供範本，預設不啟用 | 使用正式憑證；常由負載平衡器 / API Gateway 終結 TLS |
+| 流量限制 | 單一 Nginx、以 IP 計算 | 多台部署時改由 API Gateway / WAF 統一限流 |
+| 操作紀錄 | 存在同一資料庫 | 另送集中式日誌 / SIEM，並設定保存期限 |
 | 並發修改 | 最後寫入為準 | 加 version 欄位做樂觀鎖 |
-| 機敏設定 | `.env` 檔 | 改用 Secret 管理服務（如 Vault）；`.env.example` 的預設密碼僅供本機示範，部署前必須更換 |
+| 機敏設定 | `.env` 檔 | 改用 Secret 管理服務（如 Vault） |
 | 超大金額顯示 | 後端以 `BigDecimal` 精確計算；但金額超過約 9 千兆（JavaScript 數字精度上限 2⁵³）時，前端顯示可能失準 | API 改以字串傳遞金額，或前端使用精確小數函式庫 |
 
-## 10. 專案結構與後端分層
+## 11. 專案結構與後端分層
 
 ```
+├─ .github/workflows/ci.yml  # GitHub Actions：測試、建置、冒煙測試
 ├─ DB/                       # DDL、SP、DML、應用程式帳號
 ├─ backend/                  # Spring Boot（Maven Wrapper）
 │  └─ src/main/java/com/banksystem/
 │     ├─ controller/         # 展示層：REST API、參數驗證、HTTP 狀態碼
 │     ├─ dto/                # 展示層：request / response 物件
-│     ├─ service/            # 業務層：金額計算、業務規則、Transaction 邊界
+│     ├─ service/            # 業務層：金額計算、業務規則、Transaction 邊界、登入帳號載入
 │     ├─ repository/         # 資料層：呼叫 Stored Procedure
 │     ├─ model/              # 資料層物件
-│     └─ common/             # 共用層：例外處理、驗證規則、安全 header
-├─ frontend/                 # Vue 3 + Vite、nginx.conf
+│     └─ common/             # 共用層
+│        ├─ security/        #   登入、授權、CSRF、安全 header
+│        ├─ exception/       #   全域例外處理（ProblemDetail）
+│        ├─ validation/      #   @NoHtml、格式規則
+│        └─ config/          #   API 文件設定
+├─ frontend/                 # Vue 3 + Vite、nginx.conf、nginx.https.conf.example
 ├─ docker-compose.yml
+├─ docker-compose.https.example.yml
 └─ .env.example
 ```
 
 | 層 | 職責 | 不做的事 |
 |---|---|---|
-| 展示層 | 接收 HTTP、`@Valid` 驗證、DTO 轉換、HTTP 狀態碼 | 不寫業務邏輯、不碰 DB |
+| 展示層 | 接收 HTTP、`@Valid` 驗證、DTO 轉換、HTTP 狀態碼、取得登入者 | 不寫業務邏輯、不碰 DB |
 | 業務層 | 金額計算、存在性檢查、`@Transactional` | 不碰 HTTP、不寫 SQL |
 | 資料層 | 呼叫 SP、ResultSet 對應物件 | 不做業務判斷 |
-| 共用層 | 全域例外處理（ProblemDetail）、`@NoHtml`、格式規則、安全 header | — |
+| 共用層 | 安全設定、全域例外處理、驗證規則、API 文件設定 | — |
 
 依賴方向：controller → service → repository，三者皆可使用 common。
 
-## 11. 設計決策
+## 12. 設計決策
 
 | 項目 | 決定 | 理由 |
 |---|---|---|
 | 產品與喜好的關係 | 1:1，新增喜好時一併建立產品 | 使用者自行輸入產品名稱 / 價格 / 費率；修改不會影響他人 |
-| 使用者識別 | 前端下拉選單切換，userId 放在 URL | 範圍內無登入需求；正式環境應改由驗證機制（如 JWT）取得 |
+| 使用者識別 | Session 登入；網址的 userId 必須等於登入者 | 補上「改網址即可操作他人資料」的缺口 |
+| Session vs JWT | Session（HttpOnly cookie）+ CSRF token | token 不暴露給 JavaScript；登出即失效；單一後端不需無狀態 token |
 | 扣款帳號 | 預設帶入使用者帳號，可修改 | 同一使用者可能用不同帳號扣款 |
 | 金額進位 | 新台幣整數元、HALF_UP | 扣款以整數元計 |
 | 購買數量 | 整數 | — |
-| 刪除 | 實體刪除 | 無保留歷史需求 |
-| Transaction | Spring `@Transactional`，SP 不含交易語句 | 見第 8 節 |
+| 刪除 | 實體刪除（操作紀錄保留異動前內容） | 資料表保持精簡，稽核需求由操作紀錄滿足 |
+| Transaction | Spring `@Transactional`，SP 不含交易語句 | 見第 9 節 |
+| 操作紀錄寫入位置 | 在 SP 內與資料異動同一交易 | 不可能出現「有異動沒紀錄」或「有紀錄沒異動」 |
 | 金額計算位置 | Java 業務層 | 符合分層、可單元測試 |
 | DB 存取 | Spring JDBC `SimpleJdbcCall` | 呼叫 SP 最直接、參數化 |
-| 並發修改 | 未處理（最後寫入為準） | 範圍外；可加 version 欄位做樂觀鎖 |
+| HTTPS | 提供範本，預設不啟用 | 本機自簽憑證會造成瀏覽器警告；私鑰不可放進版控 |
 
-## 12. 需求對照表
+## 13. 需求對照表
 
 | 需求 | 實作位置 |
 |---|---|
@@ -337,12 +431,13 @@ Stored Procedure：
 | 刪除喜好金融商品 | `DELETE /api/users/{userId}/likes/{sn}` → `sp_like_delete` |
 | 修改喜好金融商品 | `PUT /api/users/{userId}/likes/{sn}` → `sp_like_update` |
 | Web Server + Application Server + RDBMS 三層式架構 | [`docker-compose.yml`](docker-compose.yml)：Nginx → Spring Boot → MySQL |
-| 後端分展示層、業務層、資料層、共用層 | 第 10 節 |
+| 後端分展示層、業務層、資料層、共用層 | 第 11 節 |
 | Vue.js 前端 | [`frontend/`](frontend/) |
 | Spring Boot | [`backend/`](backend/) |
-| RESTful API | 第 5 節 |
+| RESTful API | 第 6 節、Swagger UI |
 | Maven / Gradle | Maven Wrapper（[`backend/mvnw`](backend/mvnw)） |
 | 透過 Stored Procedure 存取資料庫 | [`DB/02_procedures.sql`](DB/02_procedures.sql)、[`repository/`](backend/src/main/java/com/banksystem/repository/) |
-| 多表異動實作 Transaction | [`LikeService`](backend/src/main/java/com/banksystem/service/LikeService.java) `@Transactional`；第 8 節 |
+| 多表異動實作 Transaction | [`LikeService`](backend/src/main/java/com/banksystem/service/LikeService.java) `@Transactional`；第 9 節 |
 | DDL / DML 放在 DB 資料夾 | [`DB/`](DB/) |
-| 防 SQL Injection、XSS | 第 9 節 |
+| 防 SQL Injection、XSS | 第 10 節 |
+| （加強）登入與授權、CSRF、流量限制、操作紀錄、HTTPS 範本、健康檢查、API 文件、CI | 第 4、5、10 節 |
