@@ -37,6 +37,8 @@ services:
       DB_PORT: 3306
       DB_USERNAME: ${APP_DB_USER}
       DB_PASSWORD: ${APP_DB_PASSWORD}
+      # API 文件（Swagger UI）；正式環境請在 .env 設為 false
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-true}
       TZ: Asia/Taipei
     depends_on:
       db:

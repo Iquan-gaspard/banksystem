@@ -42,3 +42,15 @@ management:
   endpoint:
     health:
       show-details: never
+
+# API 文件（Swagger UI）：放在 /api 下讓 Nginx 一併轉送；正式環境以 SWAGGER_ENABLED=false 關閉
+springdoc:
+  api-docs:
+    enabled: ${SWAGGER_ENABLED:true}
+    path: /api/v3/api-docs
+  swagger-ui:
+    enabled: ${SWAGGER_ENABLED:true}
+    path: /api/swagger-ui.html
+    csrf:
+      enabled: true   # Try it out 送出時自動帶 X-XSRF-TOKEN
+  paths-to-match: /api/**

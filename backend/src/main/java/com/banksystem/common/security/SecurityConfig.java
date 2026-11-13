@@ -1,5 +1,6 @@
 package com.banksystem.common.security;
 
+import java.util.Arrays;
 import java.util.function.Supplier;
 
 import org.springframework.context.annotation.Bean;
@@ -16,6 +17,12 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
 import org.springframework.security.web.authentication.logout.HttpStatusReturningLogoutSuccessHandler;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.header.writers.DelegatingRequestMatcherHeaderWriter;
+import org.springframework.security.web.header.writers.StaticHeadersWriter;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
+import org.springframework.security.web.util.matcher.NegatedRequestMatcher;
+import org.springframework.security.web.util.matcher.OrRequestMatcher;
+import org.springframework.security.web.util.matcher.RequestMatcher;
 
 import com.banksystem.dto.response.UserResponse;
 import com.banksystem.service.UserService;
@@ -37,6 +44,13 @@ public class SecurityConfig {
     /** API 回應本身不需要載入任何資源，也不允許被嵌入 iframe。 */
     private static final String API_CSP = "default-src 'none'; frame-ancestors 'none'";
 
+    /** Swagger UI 頁面需載入自身的 JS / CSS（含 inline style），其餘限制同 API。 */
+    private static final String SWAGGER_CSP = "default-src 'self'; script-src 'self'; "
+            + "style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'";
+
+    /** API 文件路徑（可由環境變數 SWAGGER_ENABLED=false 關閉，正式環境建議關閉）。 */
+    private static final String[] SWAGGER_PATHS = {"/api/swagger-ui.html", "/api/swagger-ui/**", "/api/v3/api-docs/**"};
+
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
@@ -47,6 +61,10 @@ public class SecurityConfig {
             UserService userService) throws Exception {
         JsonResponseWriter writer = new JsonResponseWriter(objectMapper);
 
+        PathPatternRequestMatcher.Builder paths = PathPatternRequestMatcher.withDefaults();
+        RequestMatcher swaggerPaths = new OrRequestMatcher(
+                Arrays.stream(SWAGGER_PATHS).<RequestMatcher>map(paths::matcher).toList());
+
         CookieCsrfTokenRepository csrfTokenRepository = CookieCsrfTokenRepository.withHttpOnlyFalse();
         csrfTokenRepository.setCookieCustomizer(cookie -> cookie.sameSite("Lax").path("/"));
 
@@ -54,6 +72,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/login").permitAll()
                         .requestMatchers("/actuator/health").permitAll()
+                        .requestMatchers(SWAGGER_PATHS).permitAll()
                         .requestMatchers("/api/users/{userId}", "/api/users/{userId}/**")
                                 .access(SecurityConfig::isResourceOwner)
                         .anyRequest().authenticated())
@@ -80,7 +99,10 @@ public class SecurityConfig {
                         .accessDeniedHandler((request, response, e) -> writer.writeProblem(
                                 response, HttpStatus.FORBIDDEN, "沒有權限執行此操作")))
                 .headers(headers -> headers
-                        .contentSecurityPolicy(csp -> csp.policyDirectives(API_CSP)));
+                        .addHeaderWriter(new DelegatingRequestMatcherHeaderWriter(swaggerPaths,
+                                new StaticHeadersWriter("Content-Security-Policy", SWAGGER_CSP)))
+                        .addHeaderWriter(new DelegatingRequestMatcherHeaderWriter(new NegatedRequestMatcher(swaggerPaths),
+                                new StaticHeadersWriter("Content-Security-Policy", API_CSP))));
 
         return http.build();
     }

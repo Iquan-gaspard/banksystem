@@ -41,6 +41,12 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
+        <!-- API 文件（Swagger UI），路徑 /api/swagger-ui.html -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>2.8.17</version>
+        </dependency>
         <!-- 資料層：Spring JDBC 呼叫 Stored Procedure、交易管理 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
