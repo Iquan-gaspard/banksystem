@@ -89,7 +89,7 @@ mysql -uroot -p < DB/02_procedures.sql
 mysql -uroot -p < DB/03_seed.sql
 ```
 
-再以 root 建立應用程式帳號（對應 `DB/04_app_user.sh`，只授予 EXECUTE）：
+再以 root 建立應用程式帳號，只授予 EXECUTE。`DB/04_app_user.sh` 是給 Docker 初始化用的 shell 腳本（Windows 無法直接執行），非 Docker 環境請改用以下等效 SQL：
 
 ```sql
 CREATE USER 'banksystem_app'@'%' IDENTIFIED BY '<你的密碼>';
