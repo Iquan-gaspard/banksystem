@@ -13,6 +13,8 @@ spring:
     # 未定義的 JSON 欄位直接拒絕（例如前端偷傳 totalFee），避免被竄改金額
     deserialization:
       fail-on-unknown-properties: true
+      # 整數欄位收到小數（例如購買數量 1.5）直接拒絕，不可默默截斷成 1
+      accept-float-as-int: false
 
 server:
   port: 8080

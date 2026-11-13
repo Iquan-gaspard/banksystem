@@ -128,7 +128,7 @@ cd backend
 |---|---|---|
 | `FeeCalculatorTest` | 單元 | 手續費 / 總金額計算、四捨五入邊界、上限檢查 |
 | `LikeServiceTest` | 單元（Mockito） | 業務流程：使用者不存在、資料不存在或不屬於該使用者 |
-| `LikeControllerTest` | 展示層（`@WebMvcTest`） | 201 / 204 / 400 / 404、XSS 輸入、竄改金額欄位、惡意 userId |
+| `LikeControllerTest` | 展示層（`@WebMvcTest`） | 201 / 204 / 400 / 404、各欄位邊界值（剛好合法 / 超出一格）、數量為小數、XSS 輸入、竄改金額欄位、惡意 userId、錯誤訊息不回傳使用者輸入 |
 | `LikeTransactionIntegrationTest` | 整合（Testcontainers + 真實 MySQL） | 經 SP 的 CRUD、**多表交易 rollback**、應用程式帳號無法直接存取資料表 |
 
 整合測試會啟動 MySQL 容器並執行 `DB/` 內的腳本；**沒有 Docker 的環境會自動略過**（`@Testcontainers(disabledWithoutDocker = true)`），`./mvnw clean verify` 仍可通過。
@@ -267,9 +267,25 @@ Stored Procedure：
 **其他**
 
 - 每筆資料都以 `user_id + sn` 定位，無法修改 / 刪除其他使用者的資料（回 404）。
-- 不接受未定義的 JSON 欄位（防止竄改金額）。
+- 不接受未定義的 JSON 欄位（防止竄改金額）；整數欄位收到小數直接拒絕，不默默截斷。
+- 錯誤回應的 `detail` 一律為固定文字，不回傳使用者輸入。
 - 密碼由 `.env` 提供，不寫在程式碼；`.env` 不進版控。
 - 後端容器以非 root 使用者執行；Nginx 不顯示版本號。
+
+**已知限制與正式上線前需補強**
+
+本作業範圍內未實作、正式環境必須補上的項目：
+
+| 項目 | 現況 | 正式環境做法 |
+|---|---|---|
+| 身分驗證 / 授權 | 無登入，userId 由網址指定，任何人可操作任一使用者的資料 | 導入登入機制（如 OAuth2 / JWT），userId 改由登入身分取得，不再信任網址參數 |
+| CSRF | 目前無 cookie / session，不適用 | 若改用 cookie 驗證，需加 CSRF token 或 `SameSite` cookie |
+| 傳輸加密 | HTTP | Nginx 設定 HTTPS（TLS）與 HSTS |
+| 流量限制 | 無 | Nginx `limit_req` 或 API Gateway 限制請求頻率 |
+| 稽核紀錄 | 無 | 記錄誰在何時新增 / 修改 / 刪除了哪筆資料 |
+| 並發修改 | 最後寫入為準 | 加 version 欄位做樂觀鎖 |
+| 機敏設定 | `.env` 檔 | 改用 Secret 管理服務（如 Vault）；`.env.example` 的預設密碼僅供本機示範，部署前必須更換 |
+| 超大金額顯示 | 後端以 `BigDecimal` 精確計算；但金額超過約 9 千兆（JavaScript 數字精度上限 2⁵³）時，前端顯示可能失準 | API 改以字串傳遞金額，或前端使用精確小數函式庫 |
 
 ## 10. 專案結構與後端分層
 
