@@ -36,6 +36,11 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
+        <!-- 健康檢查（只開放 /actuator/health，供 Docker healthcheck 使用） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
         <!-- 資料層：Spring JDBC 呼叫 Stored Procedure、交易管理 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

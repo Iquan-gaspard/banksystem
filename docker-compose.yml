@@ -41,6 +41,13 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      # 含資料庫連線檢查；healthy 後 Nginx 才啟動
+      test: ["CMD-SHELL", "curl -fs http://localhost:8080/actuator/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
 
   web:
     build: ./frontend
@@ -48,7 +55,8 @@ services:
     ports:
       - "${WEB_PORT:-8088}:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
 
 volumes:
   db-data:

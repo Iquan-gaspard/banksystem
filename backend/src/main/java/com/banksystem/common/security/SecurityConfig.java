@@ -53,6 +53,7 @@ public class SecurityConfig {
         http
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/login").permitAll()
+                        .requestMatchers("/actuator/health").permitAll()
                         .requestMatchers("/api/users/{userId}", "/api/users/{userId}/**")
                                 .access(SecurityConfig::isResourceOwner)
                         .anyRequest().authenticated())
