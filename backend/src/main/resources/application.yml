@@ -1,0 +1,23 @@
+spring:
+  application:
+    name: banksystem
+  datasource:
+    # 連線資訊由環境變數提供（docker-compose / .env），密碼不寫死在程式碼
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/banksystem?characterEncoding=UTF-8&connectionTimeZone=Asia/Taipei
+    username: ${DB_USERNAME:banksystem_app}
+    password: ${DB_PASSWORD:}
+  mvc:
+    problemdetails:
+      enabled: true
+  jackson:
+    # 未定義的 JSON 欄位直接拒絕（例如前端偷傳 totalFee），避免被竄改金額
+    deserialization:
+      fail-on-unknown-properties: true
+
+server:
+  port: 8080
+  error:
+    # 錯誤回應不帶 stack trace / 例外訊息，避免資訊外洩
+    include-stacktrace: never
+    include-message: never
+    include-binding-errors: never

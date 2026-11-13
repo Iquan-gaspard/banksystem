@@ -11,7 +11,6 @@
 #   CREATE USER 'banksystem_app'@'%' IDENTIFIED BY '<password>';
 #   GRANT EXECUTE ON banksystem.* TO 'banksystem_app'@'%';
 # =============================================================
-set -euo pipefail
 
 : "${APP_DB_USER:?APP_DB_USER is required}"
 : "${APP_DB_PASSWORD:?APP_DB_PASSWORD is required}"
