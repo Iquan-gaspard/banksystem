@@ -13,6 +13,7 @@ import org.springframework.jdbc.core.simple.SimpleJdbcCall;
 import org.springframework.stereotype.Repository;
 
 import com.banksystem.model.User;
+import com.banksystem.model.UserCredentials;
 
 /** 資料層：透過 Stored Procedure 存取 users。 */
 @Repository
@@ -26,14 +27,19 @@ public class UserRepository {
             rs.getString("email"),
             rs.getString("account"));
 
-    private final SimpleJdbcCall listCall;
+    private static final RowMapper<UserCredentials> CREDENTIALS_MAPPER = (rs, rowNum) -> new UserCredentials(
+            rs.getString("user_id"),
+            rs.getString("password_hash"));
+
     private final SimpleJdbcCall getCall;
+    private final SimpleJdbcCall credentialsCall;
 
     public UserRepository(JdbcTemplate jdbcTemplate) {
-        this.listCall = new SimpleJdbcCall(jdbcTemplate)
-                .withProcedureName("sp_user_list")
+        this.credentialsCall = new SimpleJdbcCall(jdbcTemplate)
+                .withProcedureName("sp_user_get_credentials")
                 .withoutProcedureColumnMetaDataAccess()
-                .returningResultSet(RESULT, USER_MAPPER);
+                .declareParameters(new SqlParameter("p_user_id", Types.VARCHAR))
+                .returningResultSet(RESULT, CREDENTIALS_MAPPER);
 
         this.getCall = new SimpleJdbcCall(jdbcTemplate)
                 .withProcedureName("sp_user_get")
@@ -42,17 +48,18 @@ public class UserRepository {
                 .returningResultSet(RESULT, USER_MAPPER);
     }
 
-    public List<User> findAll() {
-        return resultOf(listCall.execute());
-    }
-
     public Optional<User> findById(String userId) {
         Map<String, Object> out = getCall.execute(new MapSqlParameterSource("p_user_id", userId));
-        return resultOf(out).stream().findFirst();
+        return UserRepository.<User>resultOf(out).stream().findFirst();
+    }
+
+    public Optional<UserCredentials> findCredentials(String userId) {
+        Map<String, Object> out = credentialsCall.execute(new MapSqlParameterSource("p_user_id", userId));
+        return UserRepository.<UserCredentials>resultOf(out).stream().findFirst();
     }
 
     @SuppressWarnings("unchecked")
-    private static List<User> resultOf(Map<String, Object> out) {
-        return (List<User>) out.get(RESULT);
+    private static <T> List<T> resultOf(Map<String, Object> out) {
+        return (List<T>) out.get(RESULT);
     }
 }

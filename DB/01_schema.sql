@@ -21,6 +21,7 @@ CREATE TABLE users (
     user_name  VARCHAR(50)  NOT NULL COMMENT '使用者名稱',
     email      VARCHAR(100) NOT NULL COMMENT '使用者電子郵件',
     account    VARCHAR(20)  NOT NULL COMMENT '預設扣款帳號',
+    password_hash VARCHAR(100) NOT NULL COMMENT '登入密碼（BCrypt 雜湊，不存明文）',
     created_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     CONSTRAINT pk_users PRIMARY KEY (user_id)

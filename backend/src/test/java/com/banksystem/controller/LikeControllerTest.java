@@ -9,6 +9,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -24,15 +25,22 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.security.test.context.support.WithAnonymousUser;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.banksystem.common.exception.ResourceNotFoundException;
 import com.banksystem.model.LikeItem;
+import com.banksystem.common.security.SecurityConfig;
 import com.banksystem.service.LikeService;
+import com.banksystem.service.UserService;
 
 @WebMvcTest(LikeController.class)
+@Import(SecurityConfig.class)
+@WithMockUser(username = "A1236456789")
 class LikeControllerTest {
 
     private static final String BASE = "/api/users/A1236456789/likes";
@@ -46,11 +54,15 @@ class LikeControllerTest {
     @MockitoBean
     private LikeService likeService;
 
+    /** SecurityConfig 登入成功時使用 */
+    @MockitoBean
+    private UserService userService;
+
     @Test
     void createReturns201WithLocation() throws Exception {
         when(likeService.create(eq("A1236456789"), any())).thenReturn(sampleItem());
 
-        mockMvc.perform(post(BASE).contentType(MediaType.APPLICATION_JSON).content(VALID_BODY))
+        mockMvc.perform(post(BASE).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(VALID_BODY))
                 .andExpect(status().isCreated())
                 .andExpect(header().string("Location", endsWith(BASE + "/10")))
                 .andExpect(jsonPath("$.totalFee").value(30))
@@ -64,7 +76,7 @@ class LikeControllerTest {
                 {"productName":"<script>alert(1)</script>","price":-1,"feeRate":2,"purchaseQuantity":0,"account":"abc"}
                 """;
 
-        mockMvc.perform(post(BASE).contentType(MediaType.APPLICATION_JSON).content(body))
+        mockMvc.perform(post(BASE).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors.productName").exists())
                 .andExpect(jsonPath("$.errors.price").exists())
@@ -80,7 +92,7 @@ class LikeControllerTest {
                 {"productName":"x","price":1,"feeRate":0,"purchaseQuantity":1,"account":"1111999666","totalFee":0}
                 """;
 
-        mockMvc.perform(post(BASE).contentType(MediaType.APPLICATION_JSON).content(body))
+        mockMvc.perform(post(BASE).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isBadRequest());
         verify(likeService, never()).create(any(), any());
     }
@@ -97,7 +109,7 @@ class LikeControllerTest {
             throws Exception {
         when(likeService.create(eq("A1236456789"), any())).thenReturn(sampleItem());
 
-        mockMvc.perform(post(BASE).contentType(MediaType.APPLICATION_JSON)
+        mockMvc.perform(post(BASE).with(csrf()).contentType(MediaType.APPLICATION_JSON)
                         .content(body("x", price, feeRate, qty, account)))
                 .andExpect(status().isCreated());
     }
@@ -118,7 +130,7 @@ class LikeControllerTest {
     })
     void rejectsOutOfBoundaryValues(String label, String price, String feeRate, String qty, String account)
             throws Exception {
-        mockMvc.perform(post(BASE).contentType(MediaType.APPLICATION_JSON)
+        mockMvc.perform(post(BASE).with(csrf()).contentType(MediaType.APPLICATION_JSON)
                         .content(body("x", price, feeRate, qty, account)))
                 .andExpect(status().isBadRequest());
         verify(likeService, never()).create(any(), any());
@@ -126,7 +138,7 @@ class LikeControllerTest {
 
     @Test
     void rejectsProductNameOver100Chars() throws Exception {
-        mockMvc.perform(post(BASE).contentType(MediaType.APPLICATION_JSON)
+        mockMvc.perform(post(BASE).with(csrf()).contentType(MediaType.APPLICATION_JSON)
                         .content(body("a".repeat(101), "1", "0", "1", "1111999666")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors.productName").exists());
@@ -141,6 +153,34 @@ class LikeControllerTest {
                 .andExpect(content().string(not(containsString("<script"))));
     }
 
+    // ---- 登入與授權 ----
+
+    @Test
+    @WithAnonymousUser
+    void returns401WhenNotLoggedIn() throws Exception {
+        mockMvc.perform(get(BASE))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.detail").value("請先登入"));
+        verify(likeService, never()).getLikes(any());
+    }
+
+    @Test
+    @WithMockUser(username = "B2345678901")
+    void returns403WhenAccessingOtherUsersData() throws Exception {
+        mockMvc.perform(get(BASE))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(delete(BASE + "/1").with(csrf()))
+                .andExpect(status().isForbidden());
+        verify(likeService, never()).delete(any(), org.mockito.ArgumentMatchers.anyLong());
+    }
+
+    @Test
+    void returns403WhenCsrfTokenMissing() throws Exception {
+        mockMvc.perform(post(BASE).contentType(MediaType.APPLICATION_JSON).content(VALID_BODY))
+                .andExpect(status().isForbidden());
+        verify(likeService, never()).create(any(), any());
+    }
+
     @Test
     void unknownPathDoesNotEchoPath() throws Exception {
         mockMvc.perform(get("/api/no-such-path"))
@@ -150,9 +190,10 @@ class LikeControllerTest {
 
     @Test
     void rejectsMalformedUserId() throws Exception {
+        // 惡意 userId 不等於登入者 → 在授權層就被擋下（403），不會進入 Controller / 資料庫
         mockMvc.perform(get("/api/users/{userId}/likes", "A1' OR '1'='1"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.errors.userId").exists());
+                .andExpect(status().isForbidden());
+        verify(likeService, never()).getLikes(any());
     }
 
     @Test
@@ -165,7 +206,7 @@ class LikeControllerTest {
 
     @Test
     void deleteReturns204() throws Exception {
-        mockMvc.perform(delete(BASE + "/10"))
+        mockMvc.perform(delete(BASE + "/10").with(csrf()))
                 .andExpect(status().isNoContent());
         verify(likeService).delete("A1236456789", 10L);
     }
@@ -174,7 +215,7 @@ class LikeControllerTest {
     void deleteReturns404WhenNotFound() throws Exception {
         doThrow(new ResourceNotFoundException("找不到喜好商品資料")).when(likeService).delete("A1236456789", 99L);
 
-        mockMvc.perform(delete(BASE + "/99"))
+        mockMvc.perform(delete(BASE + "/99").with(csrf()))
                 .andExpect(status().isNotFound());
     }
 

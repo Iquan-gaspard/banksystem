@@ -1,7 +1,5 @@
 package com.banksystem.controller;
 
-import java.util.List;
-
 import jakarta.validation.constraints.Pattern;
 
 import org.springframework.web.bind.annotation.GetMapping;
@@ -24,11 +22,7 @@ public class UserController {
         this.userService = userService;
     }
 
-    @GetMapping
-    public List<UserResponse> getUsers() {
-        return userService.getUsers().stream().map(UserResponse::from).toList();
-    }
-
+    /** 單一使用者（只能查詢自己，由 SecurityConfig 授權規則控管）。 */
     @GetMapping("/{userId}")
     public UserResponse getUser(
             @PathVariable @Pattern(regexp = ValidationPatterns.USER_ID, message = "使用者 ID 格式錯誤") String userId) {

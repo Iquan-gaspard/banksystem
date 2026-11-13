@@ -1,13 +1,18 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
-import { getUsers } from './api/userApi'
+import { onMounted, ref } from 'vue'
+import { getCurrentUser, login, logout } from './api/authApi'
+import { onUnauthorized } from './api/http'
 import { createLike, deleteLike, getLikes, updateLike } from './api/likeApi'
-import UserSelector from './components/UserSelector.vue'
+import LoginForm from './components/LoginForm.vue'
 import LikeTable from './components/LikeTable.vue'
 import LikeForm from './components/LikeForm.vue'
 
-const users = ref([])
-const selectedUserId = ref('')
+/** 目前登入的使用者；null = 未登入 */
+const currentUser = ref(null)
+const checkingSession = ref(true)
+const loginError = ref('')
+const loggingIn = ref(false)
+
 const likes = ref([])
 const loading = ref(false)
 const message = ref({ type: '', text: '' })
@@ -17,22 +22,56 @@ const formState = ref(null)
 const formErrors = ref({})
 const saving = ref(false)
 
-const selectedUser = computed(() => users.value.find((u) => u.userId === selectedUserId.value))
-
 function showMessage(type, text) {
   message.value = { type, text }
 }
 
+function resetWorkspace() {
+  likes.value = []
+  formState.value = null
+  formErrors.value = {}
+  showMessage('', '')
+}
+
+// Session 逾時或失效 → 回到登入頁
+onUnauthorized(() => {
+  currentUser.value = null
+  resetWorkspace()
+  loginError.value = '登入已逾時，請重新登入'
+})
+
 async function loadLikes() {
-  if (!selectedUserId.value) return
   loading.value = true
   try {
-    likes.value = await getLikes(selectedUserId.value)
+    likes.value = await getLikes(currentUser.value.userId)
   } catch (error) {
     likes.value = []
     showMessage('error', error.message)
   } finally {
     loading.value = false
+  }
+}
+
+async function onLogin({ userId, password }) {
+  loggingIn.value = true
+  loginError.value = ''
+  try {
+    currentUser.value = await login(userId, password)
+    await loadLikes()
+  } catch (error) {
+    loginError.value = error.message
+  } finally {
+    loggingIn.value = false
+  }
+}
+
+async function onLogout() {
+  try {
+    await logout()
+  } finally {
+    currentUser.value = null
+    loginError.value = ''
+    resetWorkspace()
   }
 }
 
@@ -57,10 +96,10 @@ async function onSubmit(payload) {
   try {
     const item = formState.value.item
     if (item) {
-      await updateLike(selectedUserId.value, item.sn, payload)
+      await updateLike(currentUser.value.userId, item.sn, payload)
       showMessage('success', `已修改「${payload.productName}」`)
     } else {
-      await createLike(selectedUserId.value, payload)
+      await createLike(currentUser.value.userId, payload)
       showMessage('success', `已新增「${payload.productName}」`)
     }
     closeForm()
@@ -76,7 +115,7 @@ async function onSubmit(payload) {
 async function onDelete(item) {
   if (!window.confirm(`確定要刪除「${item.productName}」嗎？`)) return
   try {
-    await deleteLike(selectedUserId.value, item.sn)
+    await deleteLike(currentUser.value.userId, item.sn)
     showMessage('success', `已刪除「${item.productName}」`)
     await loadLikes()
   } catch (error) {
@@ -84,18 +123,15 @@ async function onDelete(item) {
   }
 }
 
-watch(selectedUserId, () => {
-  closeForm()
-  showMessage('', '')
-  loadLikes()
-})
-
 onMounted(async () => {
+  // 檢查是否已登入（同時讓後端寫入 CSRF token cookie）
   try {
-    users.value = await getUsers()
-    selectedUserId.value = users.value[0]?.userId ?? ''
-  } catch (error) {
-    showMessage('error', error.message)
+    currentUser.value = await getCurrentUser()
+    await loadLikes()
+  } catch {
+    currentUser.value = null
+  } finally {
+    checkingSession.value = false
   }
 })
 </script>
@@ -103,35 +139,44 @@ onMounted(async () => {
 <template>
   <header class="app-header">
     <h1>金融商品喜好紀錄系統</h1>
-    <UserSelector v-model="selectedUserId" :users="users" />
+    <div v-if="currentUser" class="session">
+      <span>{{ currentUser.userName }}</span>
+      <button type="button" class="secondary" @click="onLogout">登出</button>
+    </div>
   </header>
 
   <main>
-    <section v-if="selectedUser" class="user-info">
-      <div><span>使用者</span>{{ selectedUser.userName }}</div>
-      <div><span>聯絡電子信箱</span>{{ selectedUser.email }}</div>
-      <div><span>預設扣款帳號</span>{{ selectedUser.account }}</div>
-    </section>
+    <p v-if="checkingSession" class="empty">載入中…</p>
 
-    <p v-if="message.text" :class="['message', message.type]" role="status">{{ message.text }}</p>
+    <LoginForm v-else-if="!currentUser" :error="loginError" :loading="loggingIn" @submit="onLogin" />
 
-    <LikeForm
-      v-if="formState"
-      :initial="formState.item"
-      :default-account="selectedUser?.account ?? ''"
-      :errors="formErrors"
-      :saving="saving"
-      @submit="onSubmit"
-      @cancel="closeForm"
-    />
+    <template v-else>
+      <section class="user-info">
+        <div><span>使用者</span>{{ currentUser.userName }}（{{ currentUser.userId }}）</div>
+        <div><span>聯絡電子信箱</span>{{ currentUser.email }}</div>
+        <div><span>預設扣款帳號</span>{{ currentUser.account }}</div>
+      </section>
 
-    <section class="list">
-      <div class="list-header">
-        <h2>喜好商品清單</h2>
-        <button v-if="!formState" type="button" :disabled="!selectedUser" @click="openCreate">新增喜好商品</button>
-      </div>
-      <p v-if="loading" class="empty">載入中…</p>
-      <LikeTable v-else :likes="likes" @edit="openEdit" @delete="onDelete" />
-    </section>
+      <p v-if="message.text" :class="['message', message.type]" role="status">{{ message.text }}</p>
+
+      <LikeForm
+        v-if="formState"
+        :initial="formState.item"
+        :default-account="currentUser.account"
+        :errors="formErrors"
+        :saving="saving"
+        @submit="onSubmit"
+        @cancel="closeForm"
+      />
+
+      <section class="list">
+        <div class="list-header">
+          <h2>喜好商品清單</h2>
+          <button v-if="!formState" type="button" @click="openCreate">新增喜好商品</button>
+        </div>
+        <p v-if="loading" class="empty">載入中…</p>
+        <LikeTable v-else :likes="likes" @edit="openEdit" @delete="onDelete" />
+      </section>
+    </template>
   </main>
 </template>

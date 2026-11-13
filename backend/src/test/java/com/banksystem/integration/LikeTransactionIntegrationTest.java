@@ -5,12 +5,20 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.doReturn;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.math.BigDecimal;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.mock.web.MockHttpSession;
+import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
@@ -38,6 +46,7 @@ import com.banksystem.service.LikeService;
  * 沒有 Docker 的環境會自動略過。
  */
 @SpringBootTest
+@AutoConfigureMockMvc
 @Testcontainers(disabledWithoutDocker = true)
 class LikeTransactionIntegrationTest {
 
@@ -72,6 +81,34 @@ class LikeTransactionIntegrationTest {
 
     @MockitoSpyBean
     private FeeCalculator feeCalculator;
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @Test
+    void loginWithSeedAccountAndAccessOnlyOwnData() throws Exception {
+        MockHttpSession session = (MockHttpSession) mockMvc.perform(post("/api/auth/login").with(csrf())
+                        .param("userId", USER_ID).param("password", "Demo@1234"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.userId").value(USER_ID))
+                .andReturn().getRequest().getSession();
+
+        mockMvc.perform(get("/api/auth/me").session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.email").value("test@email.com"));
+        mockMvc.perform(get("/api/users/" + USER_ID + "/likes").session(session))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/users/B2345678901/likes").session(session))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void loginFailsWithWrongPassword() throws Exception {
+        mockMvc.perform(post("/api/auth/login").with(csrf())
+                        .param("userId", USER_ID).param("password", "wrong-password"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.detail").value("帳號或密碼錯誤"));
+    }
 
     @Test
     void createUpdateDeleteThroughStoredProcedures() {

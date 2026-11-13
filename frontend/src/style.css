@@ -29,12 +29,13 @@ body { margin: 0; }
 
 .app-header h1 { margin: 0; font-size: 1.25rem; }
 
-.user-selector { display: flex; gap: 8px; align-items: center; }
-.user-selector select { padding: 6px 8px; border-radius: 6px; border: none; }
+.session { display: flex; gap: 12px; align-items: center; }
+.session button { background: transparent; color: #fff; border-color: #fff; }
+.session button:hover:not(:disabled) { background: rgba(255,255,255,0.15); }
 
 main { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
 
-.user-info, .list, .like-form {
+.user-info, .list, .like-form, .login-form {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 8px;
@@ -72,9 +73,10 @@ button.secondary:hover:not(:disabled) { background: #f0fdfa; }
 button.danger { background: #fff; color: var(--color-danger); border-color: var(--color-danger); }
 button.danger:hover:not(:disabled) { background: #fef2f2; }
 
-.like-form label { display: block; margin-bottom: 12px; }
-.like-form label > span { display: block; font-size: 0.9rem; margin-bottom: 4px; }
-.like-form input { width: 100%; max-width: 360px; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; font: inherit; }
+.login-form { max-width: 400px; margin: 40px auto; }
+.login-form label, .like-form label { display: block; margin-bottom: 12px; }
+.like-form label > span, .login-form label > span { display: block; font-size: 0.9rem; margin-bottom: 4px; }
+.like-form input, .login-form input { width: 100%; max-width: 360px; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; font: inherit; }
 .with-hint { display: flex; gap: 8px; align-items: center; }
 .hint { color: var(--color-muted); }
 .error { display: block; color: var(--color-danger); margin-top: 4px; }

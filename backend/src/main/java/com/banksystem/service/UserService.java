@@ -1,7 +1,5 @@
 package com.banksystem.service;
 
-import java.util.List;
-
 import org.springframework.stereotype.Service;
 
 import com.banksystem.common.exception.ResourceNotFoundException;
@@ -16,10 +14,6 @@ public class UserService {
 
     public UserService(UserRepository userRepository) {
         this.userRepository = userRepository;
-    }
-
-    public List<User> getUsers() {
-        return userRepository.findAll();
     }
 
     /** 取得使用者，不存在則丟出 404。 */

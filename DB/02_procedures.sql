@@ -19,8 +19,8 @@ SET NAMES utf8mb4;
 
 USE banksystem;
 
-DROP PROCEDURE IF EXISTS sp_user_list;
 DROP PROCEDURE IF EXISTS sp_user_get;
+DROP PROCEDURE IF EXISTS sp_user_get_credentials;
 DROP PROCEDURE IF EXISTS sp_like_list_by_user;
 DROP PROCEDURE IF EXISTS sp_like_get;
 DROP PROCEDURE IF EXISTS sp_like_create;
@@ -29,22 +29,22 @@ DROP PROCEDURE IF EXISTS sp_like_delete;
 
 DELIMITER $$
 
--- 查詢所有使用者
-CREATE PROCEDURE sp_user_list()
-    READS SQL DATA
-    SQL SECURITY DEFINER
-BEGIN
-    SELECT user_id, user_name, email, account
-      FROM users
-     ORDER BY user_id;
-END$$
-
 -- 查詢單一使用者
 CREATE PROCEDURE sp_user_get(IN p_user_id VARCHAR(20))
     READS SQL DATA
     SQL SECURITY DEFINER
 BEGIN
     SELECT user_id, user_name, email, account
+      FROM users
+     WHERE user_id = p_user_id;
+END$$
+
+-- 登入驗證用：取得帳號與密碼雜湊（僅供後端比對，API 不會回傳雜湊）
+CREATE PROCEDURE sp_user_get_credentials(IN p_user_id VARCHAR(20))
+    READS SQL DATA
+    SQL SECURITY DEFINER
+BEGIN
+    SELECT user_id, password_hash
       FROM users
      WHERE user_id = p_user_id;
 END$$

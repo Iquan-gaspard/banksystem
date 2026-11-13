@@ -8,10 +8,13 @@
 SET NAMES utf8mb4;
 USE banksystem;
 
-INSERT INTO users (user_id, user_name, email, account) VALUES
-    ('A1236456789', '王o明', 'test@email.com',  '1111999666'),
-    ('B2345678901', '李o華', 'lee@email.com',   '2222888555'),
-    ('C3456789012', '陳o美', 'chen@email.com',  '3333777444');
+-- 示範帳號密碼皆為 Demo@1234（以 BCrypt 雜湊儲存，資料庫不存明文；正式環境不可使用）
+SET @demo_password_hash = '$2a$10$ygDoypCPbzzBhTvmSi/fVOa/snHfGUgiuqk8OvsKUH1Izel9gRz/u';
+
+INSERT INTO users (user_id, user_name, email, account, password_hash) VALUES
+    ('A1236456789', '王o明', 'test@email.com',  '1111999666', @demo_password_hash),
+    ('B2345678901', '李o華', 'lee@email.com',   '2222888555', @demo_password_hash),
+    ('C3456789012', '陳o美', 'chen@email.com',  '3333777444', @demo_password_hash);
 
 INSERT INTO product (no, product_name, price, fee_rate) VALUES
     (1, '全球債券基金A',     1000.00, 0.0100),
