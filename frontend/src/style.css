@@ -1,0 +1,88 @@
+:root {
+  --color-primary: #0f766e;
+  --color-primary-dark: #115e59;
+  --color-danger: #b91c1c;
+  --color-text: #1f2937;
+  --color-muted: #6b7280;
+  --color-border: #e5e7eb;
+  --color-bg: #f5f7f8;
+  --color-surface: #ffffff;
+  font-family: "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif;
+  color: var(--color-text);
+  background: var(--color-bg);
+}
+
+* { box-sizing: border-box; }
+
+body { margin: 0; }
+
+.app-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.app-header h1 { margin: 0; font-size: 1.25rem; }
+
+.user-selector { display: flex; gap: 8px; align-items: center; }
+.user-selector select { padding: 6px 8px; border-radius: 6px; border: none; }
+
+main { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
+
+.user-info, .list, .like-form {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin-bottom: 16px;
+}
+
+.user-info { display: flex; flex-wrap: wrap; gap: 8px 32px; }
+.user-info span { display: block; font-size: 0.8rem; color: var(--color-muted); }
+
+.list-header { display: flex; justify-content: space-between; align-items: center; }
+h2 { font-size: 1.1rem; margin: 0 0 12px; }
+
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
+th, td { padding: 10px 8px; border-bottom: 1px solid var(--color-border); text-align: left; white-space: nowrap; }
+th { color: var(--color-muted); font-weight: 600; }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+tfoot td { font-weight: 600; border-bottom: none; }
+.actions { display: flex; gap: 6px; }
+
+button {
+  padding: 6px 14px;
+  border: 1px solid var(--color-primary);
+  border-radius: 6px;
+  background: var(--color-primary);
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+}
+button:hover:not(:disabled) { background: var(--color-primary-dark); }
+button:disabled { opacity: 0.6; cursor: not-allowed; }
+button.secondary { background: #fff; color: var(--color-primary); }
+button.secondary:hover:not(:disabled) { background: #f0fdfa; }
+button.danger { background: #fff; color: var(--color-danger); border-color: var(--color-danger); }
+button.danger:hover:not(:disabled) { background: #fef2f2; }
+
+.like-form label { display: block; margin-bottom: 12px; }
+.like-form label > span { display: block; font-size: 0.9rem; margin-bottom: 4px; }
+.like-form input { width: 100%; max-width: 360px; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; font: inherit; }
+.with-hint { display: flex; gap: 8px; align-items: center; }
+.hint { color: var(--color-muted); }
+.error { display: block; color: var(--color-danger); margin-top: 4px; }
+.note { color: var(--color-muted); font-size: 0.85rem; }
+.form-actions { display: flex; gap: 8px; }
+
+.message { padding: 10px 14px; border-radius: 6px; }
+.message.success { background: #ecfdf5; color: #065f46; }
+.message.error { background: #fef2f2; color: var(--color-danger); }
+
+.empty { color: var(--color-muted); }
