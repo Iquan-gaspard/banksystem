@@ -15,6 +15,8 @@
 --   START TRANSACTION 會隱含 commit 外層交易，造成無法整筆 rollback。
 -- =============================================================
 
+SET NAMES utf8mb4;
+
 USE banksystem;
 
 DROP PROCEDURE IF EXISTS sp_user_list;

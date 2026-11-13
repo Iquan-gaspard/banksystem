@@ -3,6 +3,8 @@
 -- 金融商品喜好紀錄系統：建立資料庫與資料表
 -- =============================================================
 
+SET NAMES utf8mb4;
+
 CREATE DATABASE IF NOT EXISTS banksystem
     DEFAULT CHARACTER SET utf8mb4
     COLLATE utf8mb4_0900_ai_ci;
