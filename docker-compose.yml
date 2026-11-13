@@ -1,3 +1,6 @@
+# 三層式架構：Nginx（Web Server）→ Spring Boot（Application Server）→ MySQL（RDBMS）
+# 啟動：docker compose up -d --build
+# 重設資料庫（重新執行 DB/ 腳本）：docker compose down -v
 services:
   db:
     image: mysql:8.4
@@ -12,17 +15,40 @@ services:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_0900_ai_ci
     volumes:
-      # 第一次啟動時依檔名順序自動執行 DB/ 內的 DDL、SP、DML、帳號設定
+      # 第一次啟動（volume 為空）時依檔名順序執行 DB/ 內的 DDL、SP、DML、帳號設定
       - ./DB:/docker-entrypoint-initdb.d:ro
       - db-data:/var/lib/mysql
     ports:
       # 僅供本機開發除錯；只綁 127.0.0.1，不對外開放
       - "127.0.0.1:${DB_HOST_PORT:-13306}:3306"
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      # 用 TCP 檢查：初始化期間的暫時 server 不開網路，避免誤判為 ready
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$${MYSQL_ROOT_PASSWORD} --silent"]
       interval: 5s
       timeout: 5s
-      retries: 20
+      retries: 30
+      start_period: 20s
+
+  backend:
+    build: ./backend
+    container_name: banksystem-backend
+    environment:
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_USERNAME: ${APP_DB_USER}
+      DB_PASSWORD: ${APP_DB_PASSWORD}
+      TZ: Asia/Taipei
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build: ./frontend
+    container_name: banksystem-web
+    ports:
+      - "${WEB_PORT:-8088}:80"
+    depends_on:
+      - backend
 
 volumes:
   db-data:
