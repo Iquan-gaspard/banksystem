@@ -3,6 +3,8 @@ import { onMounted, ref } from 'vue'
 import { getCurrentUser, login, logout } from './api/authApi'
 import { onUnauthorized } from './api/http'
 import { createLike, deleteLike, getLikes, updateLike } from './api/likeApi'
+import { getAuditLogs } from './api/auditApi'
+import AuditLogList from './components/AuditLogList.vue'
 import LoginForm from './components/LoginForm.vue'
 import LikeTable from './components/LikeTable.vue'
 import LikeForm from './components/LikeForm.vue'
@@ -26,7 +28,27 @@ function showMessage(type, text) {
   message.value = { type, text }
 }
 
+/** 操作紀錄：展開時才載入，之後每次異動自動更新 */
+const showAuditLogs = ref(false)
+const auditLogs = ref([])
+
+async function loadAuditLogs() {
+  if (!showAuditLogs.value) return
+  try {
+    auditLogs.value = await getAuditLogs(currentUser.value.userId)
+  } catch (error) {
+    showMessage('error', error.message)
+  }
+}
+
+function toggleAuditLogs() {
+  showAuditLogs.value = !showAuditLogs.value
+  loadAuditLogs()
+}
+
 function resetWorkspace() {
+  showAuditLogs.value = false
+  auditLogs.value = []
   likes.value = []
   formState.value = null
   formErrors.value = {}
@@ -50,6 +72,7 @@ async function loadLikes() {
   } finally {
     loading.value = false
   }
+  await loadAuditLogs()
 }
 
 async function onLogin({ userId, password }) {
@@ -176,6 +199,16 @@ onMounted(async () => {
         </div>
         <p v-if="loading" class="empty">載入中…</p>
         <LikeTable v-else :likes="likes" @edit="openEdit" @delete="onDelete" />
+      </section>
+
+      <section class="list">
+        <div class="list-header">
+          <h2>操作紀錄</h2>
+          <button type="button" class="secondary" @click="toggleAuditLogs">
+            {{ showAuditLogs ? '隱藏' : '顯示' }}
+          </button>
+        </div>
+        <AuditLogList v-if="showAuditLogs" :logs="auditLogs" />
       </section>
     </template>
   </main>

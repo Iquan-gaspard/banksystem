@@ -13,6 +13,7 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.simple.SimpleJdbcCall;
 import org.springframework.stereotype.Repository;
 
+import com.banksystem.model.Actor;
 import com.banksystem.model.LikeAmount;
 import com.banksystem.model.LikeInput;
 import com.banksystem.model.LikeItem;
@@ -49,6 +50,12 @@ public class LikeRepository {
             new SqlParameter("p_total_amount", Types.DECIMAL)
     };
 
+    /** 操作紀錄用：執行者與來源 IP（寫入 audit_log）。 */
+    private static final SqlParameter[] ACTOR_PARAMS = {
+            new SqlParameter("p_actor_user_id", Types.VARCHAR),
+            new SqlParameter("p_client_ip", Types.VARCHAR)
+    };
+
     private final SimpleJdbcCall listByUserCall;
     private final SimpleJdbcCall getCall;
     private final SimpleJdbcCall createCall;
@@ -76,6 +83,7 @@ public class LikeRepository {
                 .withoutProcedureColumnMetaDataAccess()
                 .declareParameters(new SqlParameter("p_user_id", Types.VARCHAR))
                 .declareParameters(WRITE_PARAMS)
+                .declareParameters(ACTOR_PARAMS)
                 .declareParameters(new SqlOutParameter("p_sn", Types.BIGINT));
 
         this.updateCall = new SimpleJdbcCall(jdbcTemplate)
@@ -85,6 +93,7 @@ public class LikeRepository {
                         new SqlParameter("p_user_id", Types.VARCHAR),
                         new SqlParameter("p_sn", Types.BIGINT))
                 .declareParameters(WRITE_PARAMS)
+                .declareParameters(ACTOR_PARAMS)
                 .declareParameters(new SqlOutParameter("p_affected", Types.INTEGER));
 
         this.deleteCall = new SimpleJdbcCall(jdbcTemplate)
@@ -92,8 +101,9 @@ public class LikeRepository {
                 .withoutProcedureColumnMetaDataAccess()
                 .declareParameters(
                         new SqlParameter("p_user_id", Types.VARCHAR),
-                        new SqlParameter("p_sn", Types.BIGINT),
-                        new SqlOutParameter("p_affected", Types.INTEGER));
+                        new SqlParameter("p_sn", Types.BIGINT))
+                .declareParameters(ACTOR_PARAMS)
+                .declareParameters(new SqlOutParameter("p_affected", Types.INTEGER));
     }
 
     public List<LikeItem> findByUserId(String userId) {
@@ -107,31 +117,37 @@ public class LikeRepository {
         return resultOf(getCall.execute(params)).stream().findFirst();
     }
 
-    /** 新增 product + like_list，回傳新的 sn。 */
-    public long create(String userId, LikeInput input, LikeAmount amount) {
-        MapSqlParameterSource params = writeParams(input, amount).addValue("p_user_id", userId);
+    /** 新增 product + like_list（並寫入操作紀錄），回傳新的 sn。 */
+    public long create(String userId, LikeInput input, LikeAmount amount, Actor actor) {
+        MapSqlParameterSource params = writeParams(input, amount, actor).addValue("p_user_id", userId);
         Number sn = (Number) createCall.execute(params).get("p_sn");
         return sn.longValue();
     }
 
-    /** 更新 product + like_list；找不到（或不屬於該使用者）回傳 false。 */
-    public boolean update(String userId, long sn, LikeInput input, LikeAmount amount) {
-        MapSqlParameterSource params = writeParams(input, amount)
+    /** 更新 product + like_list（並寫入操作紀錄）；找不到（或不屬於該使用者）回傳 false。 */
+    public boolean update(String userId, long sn, LikeInput input, LikeAmount amount, Actor actor) {
+        MapSqlParameterSource params = writeParams(input, amount, actor)
                 .addValue("p_user_id", userId)
                 .addValue("p_sn", sn);
         return affected(updateCall.execute(params));
     }
 
-    /** 刪除 like_list + product；找不到（或不屬於該使用者）回傳 false。 */
-    public boolean delete(String userId, long sn) {
-        MapSqlParameterSource params = new MapSqlParameterSource()
+    /** 刪除 like_list + product（並寫入操作紀錄）；找不到（或不屬於該使用者）回傳 false。 */
+    public boolean delete(String userId, long sn, Actor actor) {
+        MapSqlParameterSource params = actorParams(new MapSqlParameterSource(), actor)
                 .addValue("p_user_id", userId)
                 .addValue("p_sn", sn);
         return affected(deleteCall.execute(params));
     }
 
-    private static MapSqlParameterSource writeParams(LikeInput input, LikeAmount amount) {
-        return new MapSqlParameterSource()
+    private static MapSqlParameterSource actorParams(MapSqlParameterSource params, Actor actor) {
+        return params
+                .addValue("p_actor_user_id", actor.userId())
+                .addValue("p_client_ip", actor.clientIp());
+    }
+
+    private static MapSqlParameterSource writeParams(LikeInput input, LikeAmount amount, Actor actor) {
+        return actorParams(new MapSqlParameterSource(), actor)
                 .addValue("p_product_name", input.productName())
                 .addValue("p_price", input.price())
                 .addValue("p_fee_rate", input.feeRate())

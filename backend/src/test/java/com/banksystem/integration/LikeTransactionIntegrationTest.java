@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,9 +31,12 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.MountableFile;
 
+import com.banksystem.model.Actor;
+import com.banksystem.model.AuditLog;
 import com.banksystem.model.LikeAmount;
 import com.banksystem.model.LikeInput;
 import com.banksystem.model.LikeItem;
+import com.banksystem.service.AuditLogService;
 import com.banksystem.service.FeeCalculator;
 import com.banksystem.service.LikeService;
 
@@ -53,6 +57,7 @@ class LikeTransactionIntegrationTest {
     private static final String APP_USER = "banksystem_app";
     private static final String APP_PASSWORD = "it_app_password";
     private static final String USER_ID = "A1236456789";
+    private static final Actor ACTOR = new Actor(USER_ID, "203.0.113.10");
 
     @Container
     static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.4")
@@ -74,6 +79,9 @@ class LikeTransactionIntegrationTest {
 
     @Autowired
     private LikeService likeService;
+
+    @Autowired
+    private AuditLogService auditLogService;
 
     /** 應用程式使用的連線（只有 EXECUTE 權限）。 */
     @Autowired
@@ -114,33 +122,50 @@ class LikeTransactionIntegrationTest {
     void createUpdateDeleteThroughStoredProcedures() {
         int productsBefore = count("product");
 
-        LikeItem created = likeService.create(USER_ID, input("整合測試基金", "12.34", "0.015", 7));
+        LikeItem created = likeService.create(USER_ID, input("整合測試基金", "12.34", "0.015", 7), ACTOR);
         assertThat(created.totalFee()).isEqualByComparingTo("1");
         assertThat(created.totalAmount()).isEqualByComparingTo("87");
         assertThat(created.email()).isEqualTo("test@email.com");
 
-        LikeItem updated = likeService.update(USER_ID, created.sn(), input("整合測試基金B", "100", "0.01", 2));
+        LikeItem updated = likeService.update(USER_ID, created.sn(), input("整合測試基金B", "100", "0.01", 2), ACTOR);
         assertThat(updated.productName()).isEqualTo("整合測試基金B");
         assertThat(updated.totalAmount()).isEqualByComparingTo("202");
 
-        likeService.delete(USER_ID, created.sn());
+        likeService.delete(USER_ID, created.sn(), ACTOR);
         assertThat(count("product")).isEqualTo(productsBefore);
         assertThat(count("like_list WHERE sn = " + created.sn())).isZero();
+
+        // 操作紀錄：新增 → 修改 → 刪除，記錄執行者、IP 與異動前後內容（資料刪除後紀錄仍保留）
+        List<AuditLog> logs = auditLogService.getAuditLogs(USER_ID).stream()
+                .filter(log -> log.likeSn() == created.sn())
+                .toList();
+        assertThat(logs).extracting(AuditLog::action).containsExactly("DELETE", "UPDATE", "CREATE");
+        assertThat(logs).allSatisfy(log -> {
+            assertThat(log.actorUserId()).isEqualTo(USER_ID);
+            assertThat(log.clientIp()).isEqualTo(ACTOR.clientIp());
+        });
+        AuditLog update = logs.get(1);
+        assertThat(update.beforeData()).contains("\"productName\": \"整合測試基金\"");
+        assertThat(update.afterData()).contains("\"productName\": \"整合測試基金B\"");
+        assertThat(logs.get(0).afterData()).isNull();
+        assertThat(logs.get(2).beforeData()).isNull();
     }
 
     @Test
     void createRollsBackProductWhenLikeListInsertFails() {
         int productsBefore = count("product");
         int likesBefore = count("like_list");
+        int auditsBefore = count("audit_log");
         // 讓 like_list 違反 CHECK (total_fee >= 0)：product 已寫入後，like_list 才失敗
         doReturn(new LikeAmount(new BigDecimal("-1"), BigDecimal.ONE))
                 .when(feeCalculator).calculate(any(), anyInt(), any());
 
-        assertThatThrownBy(() -> likeService.create(USER_ID, input("會失敗的商品", "100", "0.01", 1)))
+        assertThatThrownBy(() -> likeService.create(USER_ID, input("會失敗的商品", "100", "0.01", 1), ACTOR))
                 .isInstanceOf(DataAccessException.class);
 
         assertThat(count("product")).as("product 必須一起 rollback").isEqualTo(productsBefore);
         assertThat(count("like_list")).isEqualTo(likesBefore);
+        assertThat(count("audit_log")).as("失敗的操作不留紀錄").isEqualTo(auditsBefore);
     }
 
     @Test
@@ -149,7 +174,7 @@ class LikeTransactionIntegrationTest {
         doReturn(new LikeAmount(new BigDecimal("-1"), BigDecimal.ONE))
                 .when(feeCalculator).calculate(any(), anyInt(), any());
 
-        assertThatThrownBy(() -> likeService.update(USER_ID, 1L, input("不該被寫入的名稱", "1", "0", 1)))
+        assertThatThrownBy(() -> likeService.update(USER_ID, 1L, input("不該被寫入的名稱", "1", "0", 1), ACTOR))
                 .isInstanceOf(DataAccessException.class);
 
         String nameAfter = root().queryForObject("SELECT product_name FROM product WHERE no = 1", String.class);

@@ -21,6 +21,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.banksystem.common.exception.ResourceNotFoundException;
+import com.banksystem.model.Actor;
 import com.banksystem.model.LikeAmount;
 import com.banksystem.model.LikeInput;
 import com.banksystem.model.LikeItem;
@@ -32,6 +33,7 @@ class LikeServiceTest {
 
     private static final String USER_ID = "A1236456789";
     private static final User USER = new User(USER_ID, "王o明", "test@email.com", "1111999666");
+    private static final Actor ACTOR = new Actor(USER_ID, "127.0.0.1");
     private static final LikeInput INPUT =
             new LikeInput("全球債券基金A", new BigDecimal("1000"), new BigDecimal("0.01"), 3, "1111999666");
 
@@ -51,13 +53,13 @@ class LikeServiceTest {
     @Test
     void createCalculatesAmountsAndSaves() {
         when(userService.getUser(USER_ID)).thenReturn(USER);
-        when(likeRepository.create(eq(USER_ID), eq(INPUT), any())).thenReturn(10L);
+        when(likeRepository.create(eq(USER_ID), eq(INPUT), any(), eq(ACTOR))).thenReturn(10L);
         when(likeRepository.findByUserIdAndSn(USER_ID, 10L)).thenReturn(Optional.of(sampleItem(10L)));
 
-        LikeItem result = likeService.create(USER_ID, INPUT);
+        LikeItem result = likeService.create(USER_ID, INPUT, ACTOR);
 
         ArgumentCaptor<LikeAmount> amount = ArgumentCaptor.forClass(LikeAmount.class);
-        verify(likeRepository).create(eq(USER_ID), eq(INPUT), amount.capture());
+        verify(likeRepository).create(eq(USER_ID), eq(INPUT), amount.capture(), eq(ACTOR));
         assertThat(amount.getValue().totalFee()).isEqualByComparingTo("30");
         assertThat(amount.getValue().totalAmount()).isEqualByComparingTo("3030");
         assertThat(result.sn()).isEqualTo(10L);
@@ -67,24 +69,24 @@ class LikeServiceTest {
     void createFailsWhenUserNotFound() {
         when(userService.getUser(USER_ID)).thenThrow(new ResourceNotFoundException("找不到使用者"));
 
-        assertThatThrownBy(() -> likeService.create(USER_ID, INPUT))
+        assertThatThrownBy(() -> likeService.create(USER_ID, INPUT, ACTOR))
                 .isInstanceOf(ResourceNotFoundException.class);
-        verify(likeRepository, never()).create(anyString(), any(), any());
+        verify(likeRepository, never()).create(anyString(), any(), any(), any());
     }
 
     @Test
     void updateFailsWhenLikeNotFoundOrNotOwned() {
-        when(likeRepository.update(eq(USER_ID), eq(99L), eq(INPUT), any())).thenReturn(false);
+        when(likeRepository.update(eq(USER_ID), eq(99L), eq(INPUT), any(), any())).thenReturn(false);
 
-        assertThatThrownBy(() -> likeService.update(USER_ID, 99L, INPUT))
+        assertThatThrownBy(() -> likeService.update(USER_ID, 99L, INPUT, ACTOR))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
     @Test
     void deleteFailsWhenLikeNotFoundOrNotOwned() {
-        when(likeRepository.delete(anyString(), anyLong())).thenReturn(false);
+        when(likeRepository.delete(anyString(), anyLong(), any())).thenReturn(false);
 
-        assertThatThrownBy(() -> likeService.delete(USER_ID, 99L))
+        assertThatThrownBy(() -> likeService.delete(USER_ID, 99L, ACTOR))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 

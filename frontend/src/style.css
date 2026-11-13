@@ -88,3 +88,4 @@ button.danger:hover:not(:disabled) { background: #fef2f2; }
 .message.error { background: #fef2f2; color: var(--color-danger); }
 
 .empty { color: var(--color-muted); }
+td.wrap { white-space: normal; min-width: 240px; }

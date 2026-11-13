@@ -11,6 +11,7 @@ CREATE DATABASE IF NOT EXISTS banksystem
 
 USE banksystem;
 
+DROP TABLE IF EXISTS audit_log;
 DROP TABLE IF EXISTS like_list;
 DROP TABLE IF EXISTS product;
 DROP TABLE IF EXISTS users;
@@ -63,3 +64,23 @@ CREATE TABLE like_list (
 ) ENGINE = InnoDB COMMENT = '喜好清單';
 
 CREATE INDEX idx_like_list_user_id ON like_list (user_id);
+
+-- 操作紀錄：誰、何時、對哪筆資料做了什麼（異動前後內容）
+-- 由 create / update / delete SP 在同一交易中寫入；應用程式帳號沒有刪改紀錄的 SP，無法竄改
+CREATE TABLE audit_log (
+    id            BIGINT      NOT NULL AUTO_INCREMENT COMMENT '紀錄序號',
+    actor_user_id VARCHAR(20) NOT NULL COMMENT '執行操作的使用者（登入者）',
+    owner_user_id VARCHAR(20) NOT NULL COMMENT '被異動資料的擁有者',
+    action        VARCHAR(10) NOT NULL COMMENT 'CREATE / UPDATE / DELETE',
+    like_sn       BIGINT      NOT NULL COMMENT '喜好清單序號（資料刪除後紀錄仍保留，故不設 FK）',
+    before_data   JSON        NULL     COMMENT '異動前內容（新增時為 NULL）',
+    after_data    JSON        NULL     COMMENT '異動後內容（刪除時為 NULL）',
+    client_ip     VARCHAR(45) NULL     COMMENT '來源 IP（IPv4 / IPv6）',
+    created_at    DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    CONSTRAINT pk_audit_log PRIMARY KEY (id),
+    CONSTRAINT fk_audit_log_actor FOREIGN KEY (actor_user_id) REFERENCES users (user_id),
+    CONSTRAINT fk_audit_log_owner FOREIGN KEY (owner_user_id) REFERENCES users (user_id),
+    CONSTRAINT ck_audit_log_action CHECK (action IN ('CREATE', 'UPDATE', 'DELETE'))
+) ENGINE = InnoDB COMMENT = '操作紀錄';
+
+CREATE INDEX idx_audit_log_owner ON audit_log (owner_user_id, id);

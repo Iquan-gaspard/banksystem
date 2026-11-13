@@ -3,11 +3,14 @@ package com.banksystem.controller;
 import java.net.URI;
 import java.util.List;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -21,6 +24,7 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import com.banksystem.common.validation.ValidationPatterns;
 import com.banksystem.dto.request.LikeRequest;
 import com.banksystem.dto.response.LikeResponse;
+import com.banksystem.model.Actor;
 import com.banksystem.model.LikeItem;
 import com.banksystem.service.LikeService;
 
@@ -57,8 +61,10 @@ public class LikeController {
     @PostMapping
     public ResponseEntity<LikeResponse> create(
             @PathVariable @Pattern(regexp = ValidationPatterns.USER_ID, message = USER_ID_MESSAGE) String userId,
-            @Valid @RequestBody LikeRequest request) {
-        LikeItem created = likeService.create(userId, request.toInput());
+            @Valid @RequestBody LikeRequest request,
+            @AuthenticationPrincipal UserDetails principal,
+            HttpServletRequest httpRequest) {
+        LikeItem created = likeService.create(userId, request.toInput(), actor(principal, httpRequest));
         URI location = ServletUriComponentsBuilder.fromCurrentRequest()
                 .path("/{sn}")
                 .buildAndExpand(created.sn())
@@ -71,16 +77,25 @@ public class LikeController {
     public LikeResponse update(
             @PathVariable @Pattern(regexp = ValidationPatterns.USER_ID, message = USER_ID_MESSAGE) String userId,
             @PathVariable @Positive(message = SN_MESSAGE) long sn,
-            @Valid @RequestBody LikeRequest request) {
-        return LikeResponse.from(likeService.update(userId, sn, request.toInput()));
+            @Valid @RequestBody LikeRequest request,
+            @AuthenticationPrincipal UserDetails principal,
+            HttpServletRequest httpRequest) {
+        return LikeResponse.from(likeService.update(userId, sn, request.toInput(), actor(principal, httpRequest)));
     }
 
     /** 刪除喜好：204 No Content。 */
     @DeleteMapping("/{sn}")
     public ResponseEntity<Void> delete(
             @PathVariable @Pattern(regexp = ValidationPatterns.USER_ID, message = USER_ID_MESSAGE) String userId,
-            @PathVariable @Positive(message = SN_MESSAGE) long sn) {
-        likeService.delete(userId, sn);
+            @PathVariable @Positive(message = SN_MESSAGE) long sn,
+            @AuthenticationPrincipal UserDetails principal,
+            HttpServletRequest httpRequest) {
+        likeService.delete(userId, sn, actor(principal, httpRequest));
         return ResponseEntity.noContent().build();
+    }
+
+    /** 操作紀錄用：執行者為登入者，IP 為來源位址（經 Nginx 轉送後由 Tomcat 解析 X-Forwarded-For）。 */
+    private static Actor actor(UserDetails principal, HttpServletRequest request) {
+        return new Actor(principal.getUsername(), request.getRemoteAddr());
     }
 }

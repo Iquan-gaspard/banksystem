@@ -60,7 +60,7 @@ class LikeControllerTest {
 
     @Test
     void createReturns201WithLocation() throws Exception {
-        when(likeService.create(eq("A1236456789"), any())).thenReturn(sampleItem());
+        when(likeService.create(eq("A1236456789"), any(), any())).thenReturn(sampleItem());
 
         mockMvc.perform(post(BASE).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(VALID_BODY))
                 .andExpect(status().isCreated())
@@ -83,7 +83,7 @@ class LikeControllerTest {
                 .andExpect(jsonPath("$.errors.feeRate").exists())
                 .andExpect(jsonPath("$.errors.purchaseQuantity").exists())
                 .andExpect(jsonPath("$.errors.account").exists());
-        verify(likeService, never()).create(any(), any());
+        verify(likeService, never()).create(any(), any(), any());
     }
 
     @Test
@@ -94,7 +94,7 @@ class LikeControllerTest {
 
         mockMvc.perform(post(BASE).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isBadRequest());
-        verify(likeService, never()).create(any(), any());
+        verify(likeService, never()).create(any(), any(), any());
     }
 
     @ParameterizedTest(name = "邊界內：{0}")
@@ -107,7 +107,7 @@ class LikeControllerTest {
     })
     void acceptsBoundaryValues(String label, String price, String feeRate, String qty, String account)
             throws Exception {
-        when(likeService.create(eq("A1236456789"), any())).thenReturn(sampleItem());
+        when(likeService.create(eq("A1236456789"), any(), any())).thenReturn(sampleItem());
 
         mockMvc.perform(post(BASE).with(csrf()).contentType(MediaType.APPLICATION_JSON)
                         .content(body("x", price, feeRate, qty, account)))
@@ -133,7 +133,7 @@ class LikeControllerTest {
         mockMvc.perform(post(BASE).with(csrf()).contentType(MediaType.APPLICATION_JSON)
                         .content(body("x", price, feeRate, qty, account)))
                 .andExpect(status().isBadRequest());
-        verify(likeService, never()).create(any(), any());
+        verify(likeService, never()).create(any(), any(), any());
     }
 
     @Test
@@ -171,14 +171,14 @@ class LikeControllerTest {
                 .andExpect(status().isForbidden());
         mockMvc.perform(delete(BASE + "/1").with(csrf()))
                 .andExpect(status().isForbidden());
-        verify(likeService, never()).delete(any(), org.mockito.ArgumentMatchers.anyLong());
+        verify(likeService, never()).delete(any(), org.mockito.ArgumentMatchers.anyLong(), any());
     }
 
     @Test
     void returns403WhenCsrfTokenMissing() throws Exception {
         mockMvc.perform(post(BASE).contentType(MediaType.APPLICATION_JSON).content(VALID_BODY))
                 .andExpect(status().isForbidden());
-        verify(likeService, never()).create(any(), any());
+        verify(likeService, never()).create(any(), any(), any());
     }
 
     @Test
@@ -208,12 +208,12 @@ class LikeControllerTest {
     void deleteReturns204() throws Exception {
         mockMvc.perform(delete(BASE + "/10").with(csrf()))
                 .andExpect(status().isNoContent());
-        verify(likeService).delete("A1236456789", 10L);
+        verify(likeService).delete(eq("A1236456789"), eq(10L), any());
     }
 
     @Test
     void deleteReturns404WhenNotFound() throws Exception {
-        doThrow(new ResourceNotFoundException("找不到喜好商品資料")).when(likeService).delete("A1236456789", 99L);
+        doThrow(new ResourceNotFoundException("找不到喜好商品資料")).when(likeService).delete(eq("A1236456789"), eq(99L), any());
 
         mockMvc.perform(delete(BASE + "/99").with(csrf()))
                 .andExpect(status().isNotFound());
