@@ -88,6 +88,7 @@ API 文件（Swagger UI）：http://localhost:8088/api/swagger-ui.html（先在�
 |---|---|---|
 | `MYSQL_ROOT_PASSWORD` | `change_me_root` | MySQL root 密碼 |
 | `APP_DB_USER` / `APP_DB_PASSWORD` | `banksystem_app` / `change_me_app` | 應用程式帳號（只有 EXECUTE 權限） |
+| `WEB_BIND` | `127.0.0.1` | 網站監聽的介面：預設只有本機能連；需讓區網其他電腦連入時設為 `0.0.0.0` |
 | `WEB_PORT` | `8088` | 網站對外 port（避開常被佔用的 80） |
 | `DB_HOST_PORT` | `13306` | 本機連 MySQL 的 port（避開 3306） |
 | `SWAGGER_ENABLED` | `true` | 是否開放 API 文件；正式環境請設為 `false` |
@@ -351,7 +352,8 @@ Stored Procedure：
 
 **操作紀錄**
 
-- 記錄誰（登入者）、何時、對哪筆資料、做了什麼（新增 / 修改 / 刪除）、異動前後內容、來源 IP（經 Nginx 由 `X-Forwarded-For` 取得）。
+- 記錄誰（登入者）、何時、對哪筆資料、做了什麼（新增 / 修改 / 刪除）、異動前後內容、來源 IP。
+- 來源 IP 由 Nginx 以實際連線位址**覆蓋** `X-Forwarded-For` 後轉給後端，用戶端自行帶入的 `X-Forwarded-For` 不會被採用（防止偽造來源 IP）。
 - 與資料異動在同一交易中寫入；應用程式帳號沒有任何能刪改紀錄的 SP，**無法竄改紀錄**。
 
 **其他**
@@ -359,6 +361,29 @@ Stored Procedure：
 - 每筆資料都以 `user_id + sn` 定位；不接受未定義的 JSON 欄位（防止竄改金額）；整數欄位收到小數直接拒絕。
 - 密碼由 `.env` 提供，不寫在程式碼；`.env`、憑證、私鑰不進版控。
 - 後端容器以非 root 使用者執行；Nginx 不顯示版本號；`/actuator` 只開放 `health` 且不經 Nginx 對外。
+
+**基本滲透測試結果**
+
+以攻擊者角度對本機部署（經 Nginx）實測：
+
+| 類別 | 測試內容 | 結果 |
+|---|---|---|
+| 偵察 | `/.env`、`/.git/config`、`/actuator/env`、source map、`TRACE` | 皆無洩漏（回 Vue 首頁或 401 / 405）；`Server` header 不含版本 |
+| 越權存取 | 讀取 / 修改 / 刪除他人資料、用自己的網址操作他人的序號 | 403 / 404，他人資料未變動 |
+| 路徑繞過 | 大小寫、結尾斜線、`//`、`../`、`%2e%2e`、`%2F`、`;`、`%00`、`X-HTTP-Method-Override` | 403 / 400 / 405 |
+| SQL Injection | 名稱、帳號、序號帶 SQL 語法 | 400，或被原樣存成文字，資料表完好 |
+| 竄改 / 異常輸入 | 多傳 `userId` / `totalFee`、型別混淆、2 MB body、5000 層巢狀 JSON | 400 / 413 |
+| XSS | `<script>`、`<img onerror>`（400）；不含 `<>` 的字串（存入但只以文字顯示，前端無 `v-html` / `innerHTML` / 動態 `href`） | 無法執行 |
+| CSRF / CORS | 無 token、偽造 token、他人 token；跨站 Origin | 403；無 `Access-Control-Allow-Origin` |
+| Session | Session 固定攻擊、登出後重用舊 Session | 登入後換發新 ID；舊 Session 401 |
+| 帳號探測 | 「帳號存在密碼錯」vs「帳號不存在」的回應時間 | 152 ms vs 160 ms，無法區分 |
+| 暴力破解 | 連續猜密碼、偽造 `X-Forwarded-For` / `X-Real-IP` 繞過限流 | 第 7 次起 429，偽造 header 無效 |
+| 網路暴露 | 從區網連資料庫 / 後端 / 網站 | 皆無法連線（只綁 127.0.0.1） |
+
+演練中發現並已修正：
+
+1. **操作紀錄的來源 IP 可被偽造**（中）：Nginx 原本把真實 IP「附加」在用戶端自帶的 `X-Forwarded-For` 之後，而後端信任內網代理，導致偽造值被記入紀錄 → 改為以實際連線 IP 覆蓋。
+2. **網站預設對區網開放**（低）：示範帳號密碼公開於 README，同網路的人可登入 → 預設只綁 `127.0.0.1`，需要時以 `WEB_BIND` 開放。
 
 **已知限制與正式上線前需補強**
 

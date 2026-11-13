@@ -40,7 +40,8 @@ server {
 
     proxy_set_header Host $http_host;
     proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    # Nginx 是最外層入口：以實際連線 IP 覆蓋 X-Forwarded-For，不沿用用戶端自帶的值（防止偽造來源 IP）
+    proxy_set_header X-Forwarded-For $remote_addr;
     proxy_set_header X-Forwarded-Proto $scheme;   # 後端據此判斷為 HTTPS（Cookie 加上 Secure）
 
     error_page 429 = @too_many_requests;
