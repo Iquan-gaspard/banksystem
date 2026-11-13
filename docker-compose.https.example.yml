@@ -1,0 +1,19 @@
+# =============================================================
+# HTTPS 覆寫設定範本（預設不啟用）
+# 使用方式：
+#   docker compose -f docker-compose.yml -f docker-compose.https.example.yml up -d --build
+# 需先準備憑證：certs/fullchain.pem、certs/privkey.pem（私鑰不可提交到版控）
+# =============================================================
+services:
+  web:
+    ports:
+      - "${HTTPS_PORT:-443}:443"
+      - "${HTTP_REDIRECT_PORT:-80}:80"
+    volumes:
+      - ./frontend/nginx.https.conf.example:/etc/nginx/conf.d/default.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+
+  backend:
+    environment:
+      # Session cookie 只在 HTTPS 傳送
+      COOKIE_SECURE: "true"

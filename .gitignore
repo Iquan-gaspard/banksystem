@@ -39,3 +39,8 @@ nbbuild/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# HTTPS 憑證與私鑰（不可提交）
+certs/
+*.pem
+*.key
