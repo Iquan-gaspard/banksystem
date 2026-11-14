@@ -16,7 +16,8 @@
 只需要 Git 與 Docker Desktop（詳見[快速啟動](#2-快速啟動docker)）：
 
 ```bash
-git clone https://github.com/Iquan-gaspard/banksystem.git && cd banksystem
+git clone https://github.com/Iquan-gaspard/banksystem.git
+cd banksystem
 cp .env.example .env                  # PowerShell：Copy-Item .env.example .env
 docker compose up -d --build --wait   # 第一次約需數分鐘
 ```
