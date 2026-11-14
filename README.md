@@ -49,17 +49,24 @@ Browser ──HTTP(S)──▶ Nginx（Web Server，:8088）
 
 ## 2. 快速啟動（Docker）
 
-需求：Docker Desktop（含 Docker Compose）。
+需求：Git、[Docker Desktop](https://www.docker.com/products/docker-desktop/)（已內含 Docker Compose）。**不需要**另外安裝 Java、Maven、Node.js 或 MySQL，建置都在容器內完成。
 
 ```bash
+# 0. 下載專案，並確認 Docker Desktop 已開啟（docker version 可看到 Server 資訊）
+git clone https://github.com/Iquan-gaspard/banksystem.git
+cd banksystem
+
 # 1. 建立環境變數檔（可修改密碼與 port）
 cp .env.example .env          # Windows PowerShell：Copy-Item .env.example .env
 
 # 2. 建置並啟動 db / backend / web（--wait 會等到全部 healthy）
+#    第一次需下載映像檔與 Maven / npm 套件，約需數分鐘
 docker compose up -d --build --wait
 
-# 3. 開啟瀏覽器 http://localhost:8088
+# 3. 開啟瀏覽器 http://localhost:8088，以下方示範帳號登入
 ```
+
+若 8088 已被佔用，修改 `.env` 的 `WEB_PORT` 後重新執行步驟 2。
 
 **示範帳號**（密碼皆為 `Demo@1234`，資料庫中以 BCrypt 雜湊儲存）：
 
@@ -101,10 +108,10 @@ API 文件（Swagger UI）：http://localhost:8088/api/swagger-ui.html（先在�
 
 **(1) 建立資料庫**
 
+在專案根目錄執行（使用 `source`，Windows PowerShell 與 macOS / Linux 皆適用；PowerShell 不支援 `<` 重新導向）：
+
 ```bash
-mysql -uroot -p < DB/01_schema.sql
-mysql -uroot -p < DB/02_procedures.sql
-mysql -uroot -p < DB/03_seed.sql
+mysql -uroot -p --default-character-set=utf8mb4 -e "source DB/01_schema.sql; source DB/02_procedures.sql; source DB/03_seed.sql;"
 ```
 
 再以 root 建立應用程式帳號，只授予 EXECUTE。`DB/04_app_user.sh` 是給 Docker 初始化用的 shell 腳本（Windows 無法直接執行），非 Docker 環境請改用以下等效 SQL：
