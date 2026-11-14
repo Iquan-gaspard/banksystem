@@ -11,6 +11,26 @@
 
 > 本專案開發過程使用 AI 工具輔助，包含規格整理、程式撰寫與測試；所有設計決策與驗證結果皆經本人確認。
 
+### 5 分鐘快速體驗
+
+只需要 Git 與 Docker Desktop（詳見[快速啟動](#2-快速啟動docker)）：
+
+```bash
+git clone https://github.com/Iquan-gaspard/banksystem.git && cd banksystem
+cp .env.example .env                  # PowerShell：Copy-Item .env.example .env
+docker compose up -d --build --wait   # 第一次約需數分鐘
+```
+
+開啟 http://localhost:8088 後，建議依序操作：
+
+1. 以 `A1236456789` / `Demo@1234` 登入，看到 2 筆喜好商品與合計金額。
+2. 按「新增喜好商品」：輸入價格 `1000`、費率 `0.01`、數量 `3`，系統算出總手續費 30、預計扣款 3,030。
+3. 按「編輯」修改數量，金額自動重算；按「刪除」移除資料。
+4. 按「操作紀錄 → 顯示」，可看到每次新增 / 修改 / 刪除的前後內容、執行者與來源 IP。
+5. 登出，改以 `B2345678901` 登入，只看得到自己的資料（無法存取他人資料）。
+
+結束後執行 `docker compose down -v` 停止並清除資料。
+
 ---
 
 ## 目錄
@@ -180,9 +200,19 @@ cd backend
 | `LikeControllerTest` | 展示層（`@WebMvcTest` + Spring Security） | 新增 / 查詢 / 修改 / 刪除的 200 / 201 / 204 / 400 / 404；未登入 401、存取或修改他人資料 403、缺少 CSRF 403；各欄位邊界值；XSS 輸入；竄改金額欄位；金額以字串輸入輸出不失精度；錯誤訊息不回傳使用者輸入 |
 | `LikeTransactionIntegrationTest` | 整合（Testcontainers + 真實 MySQL） | 以示範帳號實際登入；**經 HTTP 完整走過登入 → 新增 → 查詢 → 修改 → 刪除 → 操作紀錄**；經 SP 的 CRUD；**多表交易 rollback**（含操作紀錄）；應用程式帳號無法直接存取資料表 |
 
+需要 JDK 17（`JAVA_HOME` 指向 JDK 17）。Maven Wrapper 第一次執行會自動從 Maven Central 下載 Maven 3.10.0，因此需要能連線到 `repo.maven.apache.org`；在無法連外或限制 PowerShell 執行的環境中，可改用已安裝的 Maven 執行 `mvn clean verify`，或以 Docker 建置（`docker compose build backend`，不需要本機 JDK）。
+
 整合測試會啟動 MySQL 容器並執行 `DB/` 內的腳本；**沒有 Docker 的環境會自動略過**（`@Testcontainers(disabledWithoutDocker = true)`），`./mvnw clean verify` 仍可通過。
 
-前端單元測試（Vitest，8 個）：金額精確加總與格式化（含超過 2⁵³ 的金額）、操作紀錄欄位比對（文字欄位以字串比較，例如產品名稱「1」與「01」、帳號前導 0 視為不同）。
+前端共 29 個測試（Vitest + Vue Test Utils，於 jsdom 執行，不需要瀏覽器或後端）：
+
+| 測試 | 內容 |
+|---|---|
+| `decimal.test.js` | 金額精確加總與格式化（含超過 2⁵³ 的金額）、操作紀錄欄位比對規則 |
+| `LikeTable.test.js` | 畫面上每筆金額與合計列（總手續費、預計扣款總金額）；大金額合計不失真；編輯 / 刪除事件；HTML 以純文字顯示（XSS） |
+| `AuditLogList.test.js` | 扣款帳號前導 0、產品名稱「1」→「01」能顯示為異動；多欄位異動；數值僅格式不同顯示「內容未變更」 |
+| `LikeForm.test.js` | 新增帶入預設帳號、送出內容（價格與費率為字串）；編輯帶入原資料；後端欄位錯誤顯示；儲存中與取消 |
+| `App.test.js` | 以模擬後端（含 Session 與 CSRF 規則）測試：登入失敗訊息；登入後新增 → 修改 → 刪除與畫面更新；驗證失敗時表單保留並顯示錯誤；登出後重新登入第一次即成功 |
 
 ```bash
 cd frontend
@@ -193,7 +223,7 @@ npm test
 **GitHub Actions**（`.github/workflows/ci.yml`）每次推送自動執行：
 
 1. 後端 `./mvnw verify`（含 Testcontainers 整合測試）
-2. 前端 `npm test`（單元測試）與 `npm run build`
+2. 前端 `npm test`（工具函式、Vue 元件與畫面流程測試）與 `npm run build`
 3. `docker compose up --wait` 啟動整套系統，以 curl 實際登入、驗證授權，並經 HTTP 完整執行新增 → 查詢 → 修改 → 刪除 → 操作紀錄（冒煙測試）
 
 ## 6. RESTful API
