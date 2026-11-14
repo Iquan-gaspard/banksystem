@@ -15,6 +15,17 @@ function readCsrfToken() {
   return match ? decodeURIComponent(match[1]) : null
 }
 
+/**
+ * 取得 CSRF token；若 cookie 不存在（例如登出時被後端清除），
+ * 先送一個 GET 讓後端重新發放，避免登出後第一次登入被拒絕（403）。
+ */
+async function ensureCsrfToken() {
+  if (!readCsrfToken()) {
+    await fetch('/api/auth/me', { credentials: 'same-origin' }).catch(() => {})
+  }
+  return readCsrfToken()
+}
+
 let unauthorizedHandler = () => {}
 
 /** 註冊「登入逾時 / 未登入」時的處理（例如切回登入頁）。 */
@@ -37,7 +48,7 @@ export async function request(path, { method = 'GET', body, skipUnauthorizedHand
     payload = JSON.stringify(body)
   }
   if (!SAFE_METHODS.includes(method)) {
-    const token = readCsrfToken()
+    const token = await ensureCsrfToken()
     if (token) headers['X-XSRF-TOKEN'] = token
   }
 
