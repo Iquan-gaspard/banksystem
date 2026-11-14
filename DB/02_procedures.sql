@@ -80,6 +80,7 @@ BEGIN
 END$$
 
 -- 操作紀錄用：取得一筆喜好的完整內容（JSON），作為異動前 / 後的快照
+-- 金額與費率轉為字串保存（例如 "1000.00"），前端讀取時不會因 JavaScript Number 而失去精度
 CREATE FUNCTION fn_like_snapshot(p_sn BIGINT)
     RETURNS JSON
     READS SQL DATA
@@ -90,12 +91,12 @@ BEGIN
     SELECT JSON_OBJECT(
                'sn',               l.sn,
                'productName',      p.product_name,
-               'price',            p.price,
-               'feeRate',          p.fee_rate,
+               'price',            CAST(p.price AS CHAR),
+               'feeRate',          CAST(p.fee_rate AS CHAR),
                'purchaseQuantity', l.purchase_quantity,
                'account',          l.account,
-               'totalFee',         l.total_fee,
-               'totalAmount',      l.total_amount)
+               'totalFee',         CAST(l.total_fee AS CHAR),
+               'totalAmount',      CAST(l.total_amount AS CHAR))
       INTO v_snapshot
       FROM like_list l
       JOIN product p ON p.no = l.product_no

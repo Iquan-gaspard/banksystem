@@ -1,4 +1,5 @@
 <script setup>
+import { changedFields } from '../utils/auditDiff'
 import { formatNumber, formatPercent } from '../utils/format'
 
 defineProps({
@@ -7,32 +8,17 @@ defineProps({
 
 const ACTION_LABELS = { CREATE: '新增', UPDATE: '修改', DELETE: '刪除' }
 
-const FIELDS = [
-  { key: 'productName', label: '產品名稱', format: (v) => v },
-  { key: 'price', label: '價格', format: formatNumber },
-  { key: 'feeRate', label: '費率', format: formatPercent },
-  { key: 'purchaseQuantity', label: '數量', format: formatNumber },
-  { key: 'account', label: '扣款帳號', format: (v) => v },
-  { key: 'totalFee', label: '總手續費', format: formatNumber },
-  { key: 'totalAmount', label: '總金額', format: formatNumber }
-]
+const FORMATTERS = { text: (v) => v, decimal: formatNumber, percent: formatPercent }
 
 const formatTime = (value) => new Date(value).toLocaleString('zh-TW', { hour12: false })
 
 const productName = (log) => log.after?.productName ?? log.before?.productName ?? ''
 
-/** 數字以數值比較（35.5 與 35.50 視為相同），其餘以字串比較。 */
-function isChanged(before, after) {
-  const a = Number(before)
-  const b = Number(after)
-  return Number.isNaN(a) || Number.isNaN(b) ? String(before) !== String(after) : a !== b
-}
-
-/** 修改：列出有變動的欄位；新增 / 刪除：顯示總金額。 */
+/** 修改：列出有變動的欄位（文字欄位以字串比較、數值欄位以十進位比較）；新增 / 刪除：顯示總金額。 */
 function describe(log) {
   if (log.action === 'UPDATE') {
-    const changes = FIELDS.filter(({ key }) => isChanged(log.before?.[key], log.after?.[key]))
-      .map(({ key, label, format }) => `${label}：${format(log.before[key])} → ${format(log.after[key])}`)
+    const changes = changedFields(log.before, log.after)
+      .map(({ key, label, type }) => `${label}：${FORMATTERS[type](log.before?.[key])} → ${FORMATTERS[type](log.after?.[key])}`)
     return changes.length ? changes.join('；') : '內容未變更'
   }
   const data = log.after ?? log.before

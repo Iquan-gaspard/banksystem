@@ -13,6 +13,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -65,9 +66,74 @@ class LikeControllerTest {
         mockMvc.perform(post(BASE).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(VALID_BODY))
                 .andExpect(status().isCreated())
                 .andExpect(header().string("Location", endsWith(BASE + "/10")))
-                .andExpect(jsonPath("$.totalFee").value(30))
-                .andExpect(jsonPath("$.totalAmount").value(3030))
+                // 金額以十進位字串輸出，避免前端 JavaScript Number 失去精度
+                .andExpect(jsonPath("$.price").value("1000.00"))
+                .andExpect(jsonPath("$.totalFee").value("30.00"))
+                .andExpect(jsonPath("$.totalAmount").value("3030.00"))
                 .andExpect(header().string("X-Content-Type-Options", "nosniff"));
+    }
+
+    @Test
+    void acceptsDecimalStringsAndKeepsPrecision() throws Exception {
+        when(likeService.create(eq("A1236456789"), any(), any())).thenReturn(sampleItem());
+        String body = """
+                {"productName":"x","price":"9999999999999.99","feeRate":"0.0015","purchaseQuantity":1,"account":"1111999666"}
+                """;
+
+        mockMvc.perform(post(BASE).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isCreated());
+        verify(likeService).create(eq("A1236456789"),
+                org.mockito.ArgumentMatchers.argThat(input -> input.price().equals(new BigDecimal("9999999999999.99"))
+                        && input.feeRate().equals(new BigDecimal("0.0015"))),
+                any());
+    }
+
+    // ---- 修改（PUT） ----
+
+    @Test
+    void updateReturns200WithRecalculatedAmounts() throws Exception {
+        when(likeService.update(eq("A1236456789"), eq(10L), any(), any())).thenReturn(sampleItem());
+
+        mockMvc.perform(put(BASE + "/10").with(csrf()).contentType(MediaType.APPLICATION_JSON).content(VALID_BODY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.sn").value(10))
+                .andExpect(jsonPath("$.totalAmount").value("3030.00"));
+        verify(likeService).update(eq("A1236456789"), eq(10L), any(), any());
+    }
+
+    @Test
+    void updateRejectsInvalidInput() throws Exception {
+        mockMvc.perform(put(BASE + "/10").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content(body("<b>x</b>", "0", "0", "1", "1111999666")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors.productName").exists())
+                .andExpect(jsonPath("$.errors.price").exists());
+        verify(likeService, never()).update(any(), org.mockito.ArgumentMatchers.anyLong(), any(), any());
+    }
+
+    @Test
+    void updateReturns404WhenNotFound() throws Exception {
+        when(likeService.update(eq("A1236456789"), eq(99L), any(), any()))
+                .thenThrow(new ResourceNotFoundException("找不到喜好商品資料"));
+
+        mockMvc.perform(put(BASE + "/99").with(csrf()).contentType(MediaType.APPLICATION_JSON).content(VALID_BODY))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.detail").value("找不到喜好商品資料"));
+    }
+
+    @Test
+    void updateReturns403WhenCsrfTokenMissing() throws Exception {
+        mockMvc.perform(put(BASE + "/10").contentType(MediaType.APPLICATION_JSON).content(VALID_BODY))
+                .andExpect(status().isForbidden());
+        verify(likeService, never()).update(any(), org.mockito.ArgumentMatchers.anyLong(), any(), any());
+    }
+
+    @Test
+    @WithMockUser(username = "B2345678901")
+    void updateReturns403ForOtherUsersData() throws Exception {
+        mockMvc.perform(put(BASE + "/10").with(csrf()).contentType(MediaType.APPLICATION_JSON).content(VALID_BODY))
+                .andExpect(status().isForbidden());
+        verify(likeService, never()).update(any(), org.mockito.ArgumentMatchers.anyLong(), any(), any());
     }
 
     @Test
@@ -226,7 +292,7 @@ class LikeControllerTest {
     }
 
     private static LikeItem sampleItem() {
-        return new LikeItem(10L, 1L, "全球債券基金A", new BigDecimal("1000"), new BigDecimal("0.01"), 3,
-                "1111999666", new BigDecimal("30"), new BigDecimal("3030"), "test@email.com");
+        return new LikeItem(10L, 1L, "全球債券基金A", new BigDecimal("1000.00"), new BigDecimal("0.0100"), 3,
+                "1111999666", new BigDecimal("30.00"), new BigDecimal("3030.00"), "test@email.com");
     }
 }

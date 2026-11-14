@@ -7,7 +7,9 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.doReturn;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -18,7 +20,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpSession;
+
+import com.jayway.jsonpath.JsonPath;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -147,8 +152,65 @@ class LikeTransactionIntegrationTest {
         AuditLog update = logs.get(1);
         assertThat(update.beforeData()).contains("\"productName\": \"整合測試基金\"");
         assertThat(update.afterData()).contains("\"productName\": \"整合測試基金B\"");
+        // 快照中的金額為字串，前端讀取時不會失去精度
+        assertThat(update.afterData()).contains("\"totalAmount\": \"202.00\"", "\"price\": \"100.00\"");
         assertThat(logs.get(0).afterData()).isNull();
         assertThat(logs.get(2).beforeData()).isNull();
+    }
+
+    /** 完整 HTTP 流程：登入 → 新增 → 查詢 → 修改 → 刪除 → 操作紀錄，經過 Spring Security、Controller、SP 與真實 MySQL。 */
+    @Test
+    void crudThroughHttpApiWithRealLogin() throws Exception {
+        MockHttpSession session = (MockHttpSession) mockMvc.perform(post("/api/auth/login").with(csrf())
+                        .param("userId", USER_ID).param("password", "Demo@1234"))
+                .andExpect(status().isOk())
+                .andReturn().getRequest().getSession();
+        String base = "/api/users/" + USER_ID + "/likes";
+
+        String created = mockMvc.perform(post(base).session(session).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"productName":"HTTP測試基金","price":"1000","feeRate":"0.01","purchaseQuantity":3,"account":"1111999666"}
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.totalFee").value("30.00"))
+                .andExpect(jsonPath("$.totalAmount").value("3030.00"))
+                .andReturn().getResponse().getContentAsString();
+        long sn = ((Number) JsonPath.read(created, "$.sn")).longValue();
+
+        mockMvc.perform(get(base + "/" + sn).session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.productName").value("HTTP測試基金"));
+
+        mockMvc.perform(put(base + "/" + sn).session(session).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"productName":"HTTP測試基金","price":"12.34","feeRate":"0.015","purchaseQuantity":7,"account":"1111999666"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalFee").value("1.00"))
+                .andExpect(jsonPath("$.totalAmount").value("87.00"));
+
+        // 他人無法修改（授權層擋下）
+        mockMvc.perform(put("/api/users/B2345678901/likes/" + sn).session(session).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"productName":"x","price":"1","feeRate":"0","purchaseQuantity":1,"account":"1111999666"}
+                                """))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(delete(base + "/" + sn).session(session).with(csrf()))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(get(base + "/" + sn).session(session))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(get("/api/users/" + USER_ID + "/audit-logs").session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].action").value("DELETE"))
+                .andExpect(jsonPath("$[0].likeSn").value(sn))
+                .andExpect(jsonPath("$[1].action").value("UPDATE"))
+                .andExpect(jsonPath("$[1].after.totalAmount").value("87.00"))
+                .andExpect(jsonPath("$[2].action").value("CREATE"));
     }
 
     @Test

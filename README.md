@@ -108,6 +108,8 @@ API 文件（Swagger UI）：http://localhost:8088/api/swagger-ui.html（先在�
 
 **(1) 建立資料庫**
 
+> ⚠️ `DB/01_schema.sql` 用於**空白資料庫初始化**，會先 DROP 既有資料表；對已有資料的資料庫重複執行會清除所有資料（含操作紀錄）。正式環境的結構異動應改用 migration 工具（如 Flyway / Liquibase）。
+
 在專案根目錄執行（使用 `source`，Windows PowerShell 與 macOS / Linux 皆適用；PowerShell 不支援 `<` 重新導向）：
 
 ```bash
@@ -169,22 +171,30 @@ cd backend
 ./mvnw clean verify        # Windows：.\mvnw.cmd clean verify
 ```
 
-共 47 個測試：
+後端共 54 個測試：
 
 | 測試 | 類型 | 內容 |
 |---|---|---|
 | `FeeCalculatorTest` | 單元 | 手續費 / 總金額計算、四捨五入邊界、上限檢查 |
 | `LikeServiceTest` | 單元（Mockito） | 業務流程：使用者不存在、資料不存在或不屬於該使用者 |
-| `LikeControllerTest` | 展示層（`@WebMvcTest` + Spring Security） | 201 / 204 / 400 / 404；未登入 401、存取他人資料 403、缺少 CSRF 403；各欄位邊界值；XSS 輸入；竄改金額欄位；錯誤訊息不回傳使用者輸入 |
-| `LikeTransactionIntegrationTest` | 整合（Testcontainers + 真實 MySQL） | 以示範帳號實際登入；經 SP 的 CRUD；**多表交易 rollback**（含操作紀錄）；操作紀錄內容；應用程式帳號無法直接存取資料表 |
+| `LikeControllerTest` | 展示層（`@WebMvcTest` + Spring Security） | 新增 / 查詢 / 修改 / 刪除的 200 / 201 / 204 / 400 / 404；未登入 401、存取或修改他人資料 403、缺少 CSRF 403；各欄位邊界值；XSS 輸入；竄改金額欄位；金額以字串輸入輸出不失精度；錯誤訊息不回傳使用者輸入 |
+| `LikeTransactionIntegrationTest` | 整合（Testcontainers + 真實 MySQL） | 以示範帳號實際登入；**經 HTTP 完整走過登入 → 新增 → 查詢 → 修改 → 刪除 → 操作紀錄**；經 SP 的 CRUD；**多表交易 rollback**（含操作紀錄）；應用程式帳號無法直接存取資料表 |
 
 整合測試會啟動 MySQL 容器並執行 `DB/` 內的腳本；**沒有 Docker 的環境會自動略過**（`@Testcontainers(disabledWithoutDocker = true)`），`./mvnw clean verify` 仍可通過。
+
+前端單元測試（Vitest，8 個）：金額精確加總與格式化（含超過 2⁵³ 的金額）、操作紀錄欄位比對（文字欄位以字串比較，例如產品名稱「1」與「01」、帳號前導 0 視為不同）。
+
+```bash
+cd frontend
+npm install
+npm test
+```
 
 **GitHub Actions**（`.github/workflows/ci.yml`）每次推送自動執行：
 
 1. 後端 `./mvnw verify`（含 Testcontainers 整合測試）
-2. 前端 `npm ci && npm run build`
-3. `docker compose up --wait` 啟動整套系統，以 curl 實際登入並驗證授權（冒煙測試）
+2. 前端 `npm test`（單元測試）與 `npm run build`
+3. `docker compose up --wait` 啟動整套系統，以 curl 實際登入、驗證授權，並經 HTTP 完整執行新增 → 查詢 → 修改 → 刪除 → 操作紀錄（冒煙測試）
 
 ## 6. RESTful API
 
@@ -217,20 +227,22 @@ Base path：`/api`，回應格式 JSON；錯誤統一為 RFC 7807 `application/p
 ```json
 {
   "productName": "全球債券基金A",
-  "price": 1000.00,
-  "feeRate": 0.01,
+  "price": "1000.00",
+  "feeRate": "0.01",
   "purchaseQuantity": 3,
   "account": "1111999666"
 }
 ```
 
-回應：
+價格、手續費率可傳數字或十進位字串（建議字串，避免用戶端浮點數誤差）。
+
+回應（金額與費率一律為十進位字串，避免 JavaScript `Number` 超過 2⁵³ 時失去精度；前端以 BigInt 精確加總與顯示）：
 
 ```json
 {
   "sn": 1, "productNo": 1, "productName": "全球債券基金A",
-  "price": 1000.00, "feeRate": 0.0100, "purchaseQuantity": 3,
-  "account": "1111999666", "totalFee": 30.00, "totalAmount": 3030.00,
+  "price": "1000.00", "feeRate": "0.0100", "purchaseQuantity": 3,
+  "account": "1111999666", "totalFee": "30.00", "totalAmount": "3030.00",
   "email": "test@email.com"
 }
 ```
@@ -256,7 +268,7 @@ DDL / DML 位於 [`DB/`](DB/)：
 | `01_schema.sql` | 建立資料庫與資料表（PK、FK、CHECK、索引） |
 | `02_procedures.sql` | Stored Procedure 與快照函式 |
 | `03_seed.sql` | 示範資料（3 位使用者、3 筆喜好） |
-| `04_app_user.sh` | 建立應用程式帳號，只授予 EXECUTE 權限 |
+| `04_app_user.sh` | 建立應用程式帳號，只授予 EXECUTE 權限（帳號名稱限英數底線；密碼先跳脫再放入 SQL，可含任意特殊字元） |
 
 ```
 users (user_id PK, user_name, email, account, password_hash)
@@ -403,7 +415,7 @@ Stored Procedure：
 | 操作紀錄 | 存在同一資料庫 | 另送集中式日誌 / SIEM，並設定保存期限 |
 | 並發修改 | 最後寫入為準 | 加 version 欄位做樂觀鎖 |
 | 機敏設定 | `.env` 檔 | 改用 Secret 管理服務（如 Vault） |
-| 超大金額顯示 | 後端以 `BigDecimal` 精確計算；但金額超過約 9 千兆（JavaScript 數字精度上限 2⁵³）時，前端顯示可能失準 | API 改以字串傳遞金額，或前端使用精確小數函式庫 |
+| 資料庫結構異動 | `DB/01_schema.sql` 為初始化腳本（會先 DROP 資料表） | 改用 Flyway / Liquibase 管理版本化 migration |
 
 ## 11. 專案結構與後端分層
 

@@ -15,8 +15,19 @@
 : "${APP_DB_USER:?APP_DB_USER is required}"
 : "${APP_DB_PASSWORD:?APP_DB_PASSWORD is required}"
 
+# 帳號名稱只允許英數與底線，避免特殊字元破壞 SQL 語句；不符合時中止初始化
+if [[ ! "${APP_DB_USER}" =~ ^[A-Za-z0-9_]{1,32}$ ]]; then
+    echo "[04_app_user] APP_DB_USER 只能包含英數字與底線（1-32 字元）" >&2
+    exit 1
+fi
+
+# 密碼放進 SQL 字串前先跳脫：反斜線 \ → \\、單引號 ' → ''（可安全使用任何特殊字元）
+app_password_sql="${APP_DB_PASSWORD//\\/\\\\}"
+app_password_sql="${app_password_sql//\'/\'\'}"
+
 mysql --protocol=socket -uroot -p"${MYSQL_ROOT_PASSWORD}" <<EOSQL
-CREATE USER IF NOT EXISTS '${APP_DB_USER}'@'%' IDENTIFIED BY '${APP_DB_PASSWORD}';
+CREATE USER IF NOT EXISTS '${APP_DB_USER}'@'%' IDENTIFIED BY '${app_password_sql}';
 GRANT EXECUTE ON banksystem.* TO '${APP_DB_USER}'@'%';
 FLUSH PRIVILEGES;
 EOSQL
+unset app_password_sql

@@ -38,12 +38,14 @@ const feeRateHint = computed(() => {
 })
 
 const toNumberOrNull = (value) => (value === '' || value === null ? null : Number(value))
+// 價格、費率以十進位字串送出，由後端以 BigDecimal 精確解析（不經過浮點數運算）
+const toDecimalStringOrNull = (value) => (value === '' || value === null ? null : String(value).trim())
 
 function onSubmit() {
   emit('submit', {
     productName: String(form.productName).trim(),
-    price: toNumberOrNull(form.price),
-    feeRate: toNumberOrNull(form.feeRate),
+    price: toDecimalStringOrNull(form.price),
+    feeRate: toDecimalStringOrNull(form.feeRate),
     purchaseQuantity: toNumberOrNull(form.purchaseQuantity),
     account: String(form.account).trim()
   })

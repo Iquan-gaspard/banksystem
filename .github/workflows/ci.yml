@@ -39,6 +39,8 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
+      - name: 單元測試（金額精度、操作紀錄比對）
+        run: npm test
       - run: npm run build
 
   e2e:
@@ -60,9 +62,41 @@ jobs:
           test "$(curl -s -c $JAR -b $JAR -o /dev/null -w '%{http_code}' http://localhost:8088/api/auth/me)" = 401
           test "$(curl -s -c $JAR -b $JAR -o /dev/null -w '%{http_code}' -X POST http://localhost:8088/api/auth/login \
                  -H "X-XSRF-TOKEN: $(xsrf)" -d 'userId=A1236456789&password=Demo@1234')" = 200
-          test "$(curl -s -b $JAR -o /dev/null -w '%{http_code}' http://localhost:8088/api/users/A1236456789/likes)" = 200
+          # 登入後 CSRF token 會更換：以 -c 接收新的 XSRF-TOKEN cookie
+          test "$(curl -s -c $JAR -b $JAR -o /dev/null -w '%{http_code}' http://localhost:8088/api/users/A1236456789/likes)" = 200
           test "$(curl -s -b $JAR -o /dev/null -w '%{http_code}' http://localhost:8088/api/users/B2345678901/likes)" = 403
-          echo "冒煙測試通過"
+          echo "登入與授權通過"
+      - name: 經 HTTP 完整新增、查詢、修改、刪除
+        run: |
+          set -e
+          JAR=cookies.txt
+          API=http://localhost:8088/api/users/A1236456789/likes
+          xsrf() { grep XSRF-TOKEN "$JAR" | awk '{print $7}'; }
+          call() { curl -s -c $JAR -b $JAR -H 'Content-Type: application/json' -H "X-XSRF-TOKEN: $(xsrf)" -w '\n%{http_code}' "$@"; }
+          status() { echo "$1" | tail -n1; }
+          body() { echo "$1" | sed '$d'; }
+
+          R=$(call -X POST $API -d '{"productName":"CI smoke","price":"1000","feeRate":"0.01","purchaseQuantity":3,"account":"1111999666"}')
+          test "$(status "$R")" = 201
+          test "$(body "$R" | jq -r .totalAmount)" = "3030.00"
+          SN=$(body "$R" | jq -r .sn)
+
+          R=$(call $API/$SN)
+          test "$(status "$R")" = 200
+          test "$(body "$R" | jq -r .productName)" = "CI smoke"
+
+          R=$(call -X PUT $API/$SN -d '{"productName":"CI smoke","price":"12.34","feeRate":"0.015","purchaseQuantity":7,"account":"1111999666"}')
+          test "$(status "$R")" = 200
+          test "$(body "$R" | jq -r .totalFee)" = "1.00"
+          test "$(body "$R" | jq -r .totalAmount)" = "87.00"
+
+          R=$(call -X DELETE $API/$SN)
+          test "$(status "$R")" = 204
+          test "$(status "$(call $API/$SN)")" = 404
+
+          R=$(call http://localhost:8088/api/users/A1236456789/audit-logs)
+          test "$(body "$R" | jq -r '[.[0].action, .[1].action, .[2].action] | join(",")')" = "DELETE,UPDATE,CREATE"
+          echo "CRUD 冒煙測試通過"
       - name: 失敗時輸出 log
         if: failure()
         run: docker compose logs --no-color

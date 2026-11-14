@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue'
+import { sumDecimals } from '../utils/decimal'
 import { formatNumber, formatPercent } from '../utils/format'
 
 const props = defineProps({
@@ -7,15 +8,11 @@ const props = defineProps({
 })
 defineEmits(['edit', 'delete'])
 
-const totals = computed(() =>
-  props.likes.reduce(
-    (sum, like) => ({
-      fee: sum.fee + Number(like.totalFee),
-      amount: sum.amount + Number(like.totalAmount)
-    }),
-    { fee: 0, amount: 0 }
-  )
-)
+// 以十進位字串精確加總（不轉成 Number，大金額不失真）
+const totals = computed(() => ({
+  fee: sumDecimals(props.likes.map((like) => like.totalFee)),
+  amount: sumDecimals(props.likes.map((like) => like.totalAmount))
+}))
 </script>
 
 <template>
